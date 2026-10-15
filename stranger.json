@@ -1,0 +1,85 @@
+{
+  "expectedTarballFiles": [
+    "package/LICENSE",
+    "package/README.md",
+    "package/THIRD_PARTY_NOTICES",
+    "package/dist/contract.d.ts",
+    "package/dist/contract.js",
+    "package/dist/effect.d.ts",
+    "package/dist/effect.js",
+    "package/dist/index.d.ts",
+    "package/dist/index.js",
+    "package/dist/testing.d.ts",
+    "package/dist/testing.js",
+    "package/docs/api/README.md",
+    "package/docs/api/effect.md",
+    "package/docs/api/index.md",
+    "package/docs/api/testing.md",
+    "package/package.json"
+  ],
+  "localDependencies": ["../cairn"],
+  "runtimeFixture": "test/stranger/runtime.mjs",
+  "typecheckFixture": "test/stranger/consumer.mts",
+  "consumerDevDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0"
+  },
+  "docs": {
+    "sigil": "write",
+    "home": {
+      "lead": "Runs an AI model's reply-and-tool-call loop as one awaited, cancellable call, so a TypeScript service doesn't have to write that control flow itself.",
+      "example": {
+        "file": "home.ts",
+        "title": "Run a scripted model reply",
+        "caption": "A faux model answers once, with no network call or credential; prints the run's final status."
+      },
+      "ladder": {
+        "start": [
+          {
+            "title": "Quickstart",
+            "href": "/quickstart/",
+            "description": "Run the deterministic faux-model example end to end."
+          },
+          {
+            "title": "Tools and control",
+            "href": "/concepts/#tools-and-control",
+            "description": "How tool preparation, execution and cancellation fit together."
+          }
+        ],
+        "tasks": [
+          {
+            "title": "Give the model a tool",
+            "href": "/api/entry/",
+            "description": "MuleTool, MuleRunInput and the other root exports."
+          },
+          {
+            "title": "Run the Effect program directly",
+            "href": "/api/effect/",
+            "description": "muleEffect.run and the typed events and errors it produces."
+          },
+          {
+            "title": "Test without a provider account",
+            "href": "/api/testing/",
+            "description": "fauxModel and fauxAssistantMessage for deterministic runs."
+          }
+        ],
+        "reference": [
+          {
+            "title": "API reference",
+            "href": "/api/",
+            "description": "Every export from the root, ./effect and ./testing entrypoints."
+          },
+          {
+            "title": "Install",
+            "href": "/install/",
+            "description": "Peer dependencies on Effect and Pi, and the Node.js version."
+          },
+          {
+            "title": "Status and limits",
+            "href": "/status/",
+            "description": "What Mule does not own, and its errors and license."
+          }
+        ]
+      }
+    }
+  }
+}

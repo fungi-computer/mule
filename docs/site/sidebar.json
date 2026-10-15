@@ -1,0 +1,47 @@
+[
+  {
+    "label": "Overview",
+    "link": "/"
+  },
+  {
+    "label": "Install",
+    "link": "/install/"
+  },
+  {
+    "label": "Quickstart",
+    "link": "/quickstart/"
+  },
+  {
+    "label": "Concepts",
+    "link": "/concepts/"
+  },
+  {
+    "label": "Integration guides",
+    "items": [
+      {
+        "label": "Connect a model provider",
+        "link": "/guides/connect-a-provider/"
+      }
+    ]
+  },
+  {
+    "label": "Examples",
+    "link": "/examples/"
+  },
+  {
+    "label": "API reference",
+    "sigil": "list",
+    "collapsed": false,
+    "items": [
+      {
+        "autogenerate": {
+          "directory": "api"
+        }
+      }
+    ]
+  },
+  {
+    "label": "Status",
+    "link": "/status/"
+  }
+]

@@ -1,0 +1,77 @@
+---
+title: Connect a model provider
+description: Supply a Pi model, credentials and cancellation to Mule's run loop.
+---
+
+Start with the [credential-free quick start](../../quickstart/) to check your
+host's event handling. For provider integration, use `muleEffect.run` from
+`@fungi.computer/mule/effect` and replace the testing helper's `model` and
+`stream` with your provider inputs.
+
+## Supply the model and credential
+
+Mule accepts Pi's `Model<Api>` directly. Select the model in your host and pass
+its complete descriptor as `model`. The descriptor identifies the provider, API
+and endpoint; Mule does not maintain a separate model catalog.
+
+| Run input                  | What the host supplies                                                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                    | The Pi model descriptor for the endpoint you intend to call.                                                                        |
+| `stream`                   | An optional provider stream. When omitted, Mule uses Pi's `streamSimple`. Remove the faux stream when switching to a real provider. |
+| `streamOptions.apiKey`     | A credential already acquired by the host. Keep it outside source code and client-visible output.                                   |
+| `resolveApiKey(provider)`  | An optional Effect callback that resolves a fresh credential before each model call.                                                |
+| `systemPrompt`, `messages` | Instructions and Pi messages, including the user message that starts the run.                                                       |
+
+The credential callback returns `Effect.Effect<string | undefined, MuleError>`.
+
+The [Effect API](../../api/effect/) describes `MuleRunInput`, `MuleListener` and
+the canonical `muleEffect` interface. `MuleRunSettings` supplies the shared
+model and provider settings.
+
+Credentials, provider access and billing belong to the host. Supplying a model
+descriptor does not establish account access or a price. Keep the model's
+provider-specific message and replay fields intact when retaining conversation
+history.
+
+## Await the run and its listener
+
+Compose the Effect returned by `muleEffect.run(input, listener)` into your
+host's run. The listener returns `Effect.Effect<void, MuleError>`; its
+completion is part of run settlement. For streamed text, handle `message_update`
+events whose nested event is `text_delta`; a delta is partial output, not proof
+that the run completed.
+
+Cancel by interrupting the run's fiber. This cancels the provider stream and
+running tools, and the run ends with a `cancelled` `run_end`. Preserve failures
+from the run and listener. Do not turn a partial response or an exception into a
+completed answer.
+
+Retries are opt-in through `retry`. `modelStreamIdleTimeoutMs` bounds silence
+between provider events. These controls do not replace a host's request budget
+or an operation's own cancellation handling.
+
+## Add typed operations
+
+A Mycelium lease exposes an Effect-native `executeTool`. Pass it to
+`muleEffect.run`, keep the lease for the whole run, and release it after the run
+settles.
+
+Mycelium owns operation validation and capability lifetime. Its host-supplied
+sandbox owns code execution. If you also need durable Sessions, recovery and
+extension grants, Shiitake composes these layers for you; Mule alone does not
+persist accepted work.
+
+## Use the Promise facade when needed
+
+The [Promise API](../../api/entry/) exposes `mule.run` for Promise hosts. Its
+`resolveApiKey(provider, signal)` callback returns a Promise, and the third
+argument to `mule.run` is an `AbortSignal`. Await both the run and listener
+work. Cancellation rejects with an `Error` abort reason, or an `AbortError` for
+a non-Error reason. Its tools use a different preparation contract; do not pass
+an Effect tool to this facade.
+
+## Check the integration without spending
+
+Use [`fauxModel`](../../api/testing/) for deterministic replies and tool calls.
+It checks your orchestration without contacting a supplier; it does not
+establish the availability of a live model provider.

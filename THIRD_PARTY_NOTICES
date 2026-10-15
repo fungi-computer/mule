@@ -1,0 +1,15 @@
+Mule's direct runtime dependencies are Effect 3.22.1, Cairn, and
+@earendil-works/pi-ai 0.84.4. Consult each dependency's distribution for its
+license terms.
+
+The Pi dependency is pinned from commit
+853a80d26c90a14c1886f0ebb8ffaae133ca2185 and distributed under the MIT
+License, Copyright (c) 2025 Mario Zechner. Its independently archived source
+boundary has SHA-256
+dfb11f4c1c00e47003db12765371198e944c8b640c995a1dc1cf9130bc9e49ee.
+
+`src/effect.ts` is an Effect-language adaptation of the model/tool loop in
+@earendil-works/pi-agent-core 0.84.4 at that commit. It also preserves reviewed
+behavior from Botanical's retained @shiit/agent-core 0.66.2 at commit
+b6eabe5dfd3cac9514025d26abbe9a92b083f10b, distributed under the MIT License,
+Copyright (c) 2024 fungi.computer.
