@@ -1,9 +1,10 @@
 import { nanoid } from "@fungi.computer/cairn";
-import {
-  isContextOverflow as piIsContextOverflow,
-  normalizeContext,
-  retryAssistantCall,
-} from "@earendil-works/pi-ai";
+// Pi's root entry also evaluates its TypeBox validator compiler and model
+// stores; Mule needs only these leaf helpers, so it imports them directly and
+// keeps that work out of every host's startup.
+import { isContextOverflow as piIsContextOverflow } from "@earendil-works/pi-ai/utils/overflow";
+import { retryAssistantCall } from "@earendil-works/pi-ai/utils/retry";
+import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 import type {
   AssistantMessage,
   AssistantMessageEvent,
@@ -60,7 +61,7 @@ export type {
   Usage,
   UserMessage,
 } from "@earendil-works/pi-ai";
-export { Type } from "@earendil-works/pi-ai";
+export { Type } from "typebox";
 export type { MuleRetryObservation } from "./contract.js";
 
 /**
