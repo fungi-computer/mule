@@ -4,7 +4,7 @@ import {
   type FauxResponseStep,
   type RegisterFauxProviderOptions,
 } from "@earendil-works/pi-ai/providers/faux";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 
 /** Deterministic model and stream with Pi's observable response state. */
 export type FauxModel = Readonly<{
@@ -12,6 +12,8 @@ export type FauxModel = Readonly<{
   model: Model<Api>;
   /** Bound Pi faux stream; never calls a remote provider. */
   stream: FauxProviderHandle["provider"]["streamSimple"];
+  /** Scripted replies have no typed provider failure; opt into retry explicitly. */
+  retryable: (message: AssistantMessage) => boolean;
   /** Replace the responses consumed by subsequent assistant calls. */
   setResponses: (replies: readonly FauxResponseStep[]) => void;
   /** Pi's call history and counters for deterministic assertions. */
@@ -28,6 +30,7 @@ export function fauxModel(
   return {
     model: faux.getModel(),
     stream: faux.provider.streamSimple.bind(faux.provider),
+    retryable: () => false,
     setResponses: (responses) => {
       faux.setResponses([...responses]);
     },

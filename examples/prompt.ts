@@ -84,6 +84,8 @@ async function main(): Promise<PromptOutcome> {
         systemPrompt: instructions,
         messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
         streamOptions: { apiKey },
+        // This example makes one call without a retry policy.
+        retryable: () => false,
       },
       (event) => {
         if (

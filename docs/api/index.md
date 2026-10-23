@@ -131,11 +131,13 @@ Result produced by a tool before Mule forms Pi's correlated result message.
 readonly content: (TextContent | ImageContent)[];
 ```
 
-##### details?
+##### data?
 
 ```ts
-readonly optional details?: JsonValue;
+readonly optional data?: JsonValue;
 ```
+
+Application payload for listeners, never part of a model message.
 
 ##### usage?
 
@@ -276,6 +278,7 @@ type MuleEvent =
       turn: MuleIdentity;
       message: MuleIdentity;
       value: Message;
+      data?: JsonValue;
     }
   | {
       type: "tool_execution_start";
@@ -403,8 +406,18 @@ Lifecycle emitted around Pi values. Pi messages and events are not rewritten.
   turn: MuleIdentity;
   message: MuleIdentity;
   value: Message;
+  data?: JsonValue;
 }
 ```
+
+| Name      | Type                            | Description                                                     |
+| --------- | ------------------------------- | --------------------------------------------------------------- |
+| `type`    | `"message_end"`                 | -                                                               |
+| `run`     | [`MuleIdentity`](#muleidentity) | -                                                               |
+| `turn`    | [`MuleIdentity`](#muleidentity) | -                                                               |
+| `message` | [`MuleIdentity`](#muleidentity) | -                                                               |
+| `value`   | `Message`                       | -                                                               |
+| `data?`   | `JsonValue`                     | Application payload independent of the completed model message. |
 
 ---
 
@@ -628,10 +641,10 @@ Continue a durable, completed assistant turn before requesting another response.
 ##### streamOptions?
 
 ```ts
-readonly optional streamOptions?: Omit<SimpleStreamOptions, "signal">;
+readonly optional streamOptions?: Omit<SimpleStreamOptions, "signal" | "maxRetries">;
 ```
 
-Pi stream options. Cancellation is the run's interruption, never a signal here.
+Provider-native retries are disabled; the typed host policy owns retry.
 
 ##### modelStreamIdleTimeoutMs?
 
@@ -653,9 +666,30 @@ readonly optional toolExecution?: "parallel" | "sequential";
 readonly optional retry?: RetryPolicy;
 ```
 
-Pi's bounded retry policy around each assistant call (`retryAssistantCall`).
+Bounded retry around each assistant call, using Pi's exponential delay.
 Undefined means no retry, matching pi-ai's own default. Hosts that want Pi
-coding-agent's numbers pass `piCodingAgentRetryDefaults`.
+coding-agent's numbers pass `piCodingAgentRetryDefaults`. Enabled policy counts
+and delays must be non-negative safe integers. Each assistant turn captures its
+policy before requesting the model.
+
+##### retryable
+
+```ts
+readonly retryable: (message) => boolean;
+```
+
+Host-owned typed decision for this exact assistant message. Only true permits
+retry; unknown messages return false, never a decision from prose.
+
+###### Parameters
+
+| Parameter | Type               |
+| --------- | ------------------ |
+| `message` | `AssistantMessage` |
+
+###### Returns
+
+`boolean`
 
 ##### retryAfterMs?
 
@@ -878,6 +912,43 @@ the run, or with the abort reason (an `AbortError` when the reason is not an
 
 `Promise`\<[`MuleRunOutcome`](#mulerunoutcome)\>
 
+---
+
+### ProviderRejection
+
+```ts
+type ProviderRejection =
+  | Readonly<{
+      code: "usage-limit-reached";
+    }>
+  | Readonly<{
+      code: "provider_unavailable";
+      status?: number;
+    }>
+  | Readonly<{
+      code: "provider_rejected";
+      status: number;
+    }>;
+```
+
+Bounded provider evidence, never response bodies, headers or error prose.
+
+---
+
+### ProviderStatusRecorder
+
+```ts
+type ProviderStatusRecorder = Readonly<{
+  fetch: typeof globalThis.fetch;
+  onProviderStreamEvent: NonNullable<
+    SimpleStreamOptions["onProviderStreamEvent"]
+  >;
+  rejection: () => ProviderRejection | undefined;
+}>;
+```
+
+One provider call's transport and parsed-event observations.
+
 ## Variables
 
 ### mule
@@ -887,3 +958,24 @@ const mule: Mule;
 ```
 
 Default Promise-facing Mule interface.
+
+## Functions
+
+### observeProviderStatus()
+
+```ts
+function observeProviderStatus(options?): ProviderStatusRecorder;
+```
+
+Observe one call's typed HTTP and parsed-event evidence. Pi owns stream
+decoding; this module retains no provider prose.
+
+#### Parameters
+
+| Parameter  | Type                                                                    |
+| ---------- | ----------------------------------------------------------------------- |
+| `options?` | `Pick`\<`SimpleStreamOptions`, `"onProviderStreamEvent"` \| `"fetch"`\> |
+
+#### Returns
+
+[`ProviderStatusRecorder`](#providerstatusrecorder)

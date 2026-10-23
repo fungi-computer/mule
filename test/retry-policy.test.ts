@@ -15,10 +15,8 @@ import {
 } from "../src/effect.js";
 import { fauxRun } from "./support.js";
 
-// Pi's retry backoff (`retryAssistantCall`, from `@earendil-works/pi-ai`
-// 0.99.0 — the version pinned in pnpm-lock.yaml) sleeps on a real
-// `setTimeout`, not Effect's `Clock`: these tests advance real timers
-// instead of using `TestClock`.
+// Advance the backing JavaScript timers for both active-stream cancellation
+// and Effect's retry backoff.
 
 const policy: RetryPolicy = {
   enabled: true,
@@ -26,6 +24,12 @@ const policy: RetryPolicy = {
   baseDelayMs: 2_000,
   maxAgentDelayMs: 60_000,
 };
+
+const invalidPolicies: RetryPolicy[] = [
+  { enabled: true, maxRetries: Infinity, baseDelayMs: 0 },
+  { enabled: true, maxRetries: -1, baseDelayMs: 0 },
+  { enabled: true, maxRetries: 1, baseDelayMs: Infinity },
+];
 
 function providerFailure(errorMessage: string) {
   return fauxAssistantMessage("", { stopReason: "error", errorMessage });
@@ -40,8 +44,8 @@ function collectRetry() {
   return { events, onRetry };
 }
 
-describe("Mule's Pi retry policy", () => {
-  it("pins Pi coding-agent's defaults to its own numbers (pi-ai 0.99.0)", () => {
+describe("Mule's typed retry policy", () => {
+  it("retains Pi coding-agent's bounded retry defaults", () => {
     expect(piCodingAgentRetryDefaults).toEqual({
       enabled: true,
       maxRetries: 3,
@@ -60,6 +64,65 @@ describe("Mule's Pi retry policy", () => {
 
     expect(outcome.status).toBe("failed");
     expect(faux.state.callCount).toBe(1);
+  });
+
+  it("disables provider-native retries so only the typed host policy can retry", async () => {
+    const { settings } = fauxRun([providerFailure("503 retry")]);
+    const stream = vi.fn(settings.stream);
+    const outcome = await Effect.runPromise(run({ ...settings, stream }));
+    expect(outcome.status).toBe("failed");
+    expect(stream).toHaveBeenCalledTimes(1);
+    expect(stream).toHaveBeenCalledWith(
+      settings.model,
+      expect.anything(),
+      expect.objectContaining({ maxRetries: 0 }),
+    );
+  });
+
+  it.each(invalidPolicies)(
+    "rejects a non-finite or negative retry policy before supplier dispatch: %j",
+    async (retry) => {
+      const { settings, faux } = fauxRun([fauxAssistantMessage("unused")]);
+      const exit = await Effect.runPromiseExit(run({ ...settings, retry }));
+      expect(exit._tag).toBe("Failure");
+      if (exit._tag !== "Failure") return;
+      expect(
+        Option.getOrUndefined(Cause.findErrorOption(exit.cause)),
+      ).toMatchObject({
+        _tag: "MuleError",
+        phase: "model",
+        message:
+          "Retry policy requires non-negative safe-integer counts and delays",
+      });
+      expect(faux.state.callCount).toBe(0);
+    },
+  );
+
+  it("captures the retry budget for the turn instead of following later caller mutations", async () => {
+    const retry: RetryPolicy = {
+      enabled: true,
+      maxRetries: 1,
+      baseDelayMs: 0,
+    };
+    const { settings, faux } = fauxRun([
+      providerFailure("first"),
+      providerFailure("last admitted attempt"),
+      providerFailure("must not dispatch"),
+      fauxAssistantMessage("must not recover"),
+    ]);
+    const outcome = await Effect.runPromise(
+      run({
+        ...settings,
+        retry,
+        retryable: () => true,
+        onRetry: (event) =>
+          Effect.sync(() => {
+            if (event.type === "retry_scheduled") retry.maxRetries = 100;
+          }),
+      }),
+    );
+    expect(outcome.status).toBe("failed");
+    expect(faux.state.callCount).toBe(2);
   });
 
   describe("with real timers advanced to Pi's backoff schedule", () => {
@@ -81,10 +144,12 @@ describe("Mule's Pi retry policy", () => {
       const muleEvents: MuleEvent[] = [];
 
       const fiber = Effect.runFork(
-        run({ ...settings, retry: policy, onRetry }, (event) =>
-          Effect.sync(() => {
-            muleEvents.push(event);
-          }),
+        run(
+          { ...settings, retry: policy, retryable: () => true, onRetry },
+          (event) =>
+            Effect.sync(() => {
+              muleEvents.push(event);
+            }),
         ),
       );
       // `advanceTimersByTimeAsync` flushes pending microtasks between timer
@@ -139,7 +204,7 @@ describe("Mule's Pi retry policy", () => {
       const { events, onRetry } = collectRetry();
 
       const fiber = Effect.runFork(
-        run({ ...settings, retry: policy, onRetry }),
+        run({ ...settings, retry: policy, retryable: () => true, onRetry }),
       );
       await vi.advanceTimersByTimeAsync(2_000);
       await vi.advanceTimersByTimeAsync(4_000);
@@ -184,6 +249,7 @@ describe("Mule's Pi retry policy", () => {
           retry: policy,
           onRetry,
           retryAfterMs: (message) => (message === refused ? 5_000 : undefined),
+          retryable: (message) => message === refused,
         }),
       );
       await vi.advanceTimersByTimeAsync(4_999);
@@ -206,7 +272,7 @@ describe("Mule's Pi retry policy", () => {
       const { events, onRetry } = collectRetry();
 
       const fiber = Effect.runFork(
-        run({ ...settings, retry: policy, onRetry }),
+        run({ ...settings, retry: policy, retryable: () => true, onRetry }),
       );
       // Flush the first (failing) call and the sleep it schedules, then
       // interrupt while Pi's 2 s backoff is still pending.
@@ -241,6 +307,28 @@ describe("Mule's Pi retry policy", () => {
     expect(events).toEqual([]);
   });
 
+  it("retains an empty provider diagnostic verbatim in typed retry observations", async () => {
+    const { settings, faux } = fauxRun([
+      providerFailure(""),
+      fauxAssistantMessage("recovered"),
+    ]);
+    const { events, onRetry } = collectRetry();
+    const outcome = await Effect.runPromise(
+      run({
+        ...settings,
+        retry: { enabled: true, maxRetries: 1, baseDelayMs: 0 },
+        retryable: () => true,
+        onRetry,
+      }),
+    );
+    expect(outcome.status).toBe("completed");
+    expect(faux.state.callCount).toBe(2);
+    expect(events[0]).toMatchObject({
+      type: "retry_scheduled",
+      errorMessage: "",
+    });
+  });
+
   it("reports a transport exception as its own MuleError, not wrapped as a retry-loop failure", async () => {
     const { settings } = fauxRun([]);
     const cause = new Error("bad credentials");
@@ -263,5 +351,30 @@ describe("Mule's Pi retry policy", () => {
       message: "Pi model stream could not start",
       cause,
     });
+  });
+
+  it("retains a retry-delay observer exception as a typed model failure", async () => {
+    const { settings, faux } = fauxRun([providerFailure("typed transient")]);
+    const cause = new Error("delay observer failed");
+    const exit = await Effect.runPromiseExit(
+      run({
+        ...settings,
+        retry: policy,
+        retryable: () => true,
+        retryAfterMs: () => {
+          throw cause;
+        },
+      }),
+    );
+    expect(exit._tag).toBe("Failure");
+    if (exit._tag !== "Failure") return;
+    expect(
+      Option.getOrUndefined(Cause.findErrorOption(exit.cause)),
+    ).toMatchObject({
+      _tag: "MuleError",
+      phase: "model",
+      cause,
+    });
+    expect(faux.state.callCount).toBe(1);
   });
 });

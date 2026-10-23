@@ -42,6 +42,7 @@ export function fauxRun(responses: FauxResponseStep[]) {
     faux,
     settings: {
       model: faux.model,
+      retryable: () => false,
       stream,
       systemPrompt: "Test.",
       messages: [userMessage("Go")],

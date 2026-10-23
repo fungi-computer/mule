@@ -6,6 +6,7 @@ const faux = fauxModel([fauxAssistantMessage("pong")]);
 const outcome = await mule.run(
   {
     model: faux.model,
+    retryable: faux.retryable,
     stream: faux.stream,
     systemPrompt: "Reply once.",
     messages: [{ role: "user", content: "ping", timestamp: 1 }],

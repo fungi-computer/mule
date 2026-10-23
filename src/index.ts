@@ -1,4 +1,9 @@
 import type { Message, Tool, ToolCall } from "@earendil-works/pi-ai";
+export {
+  observeProviderStatus,
+  type ProviderRejection,
+  type ProviderStatusRecorder,
+} from "./provider-status.js";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

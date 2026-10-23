@@ -1,16 +1,23 @@
 import { nanoid } from "@fungi.computer/cairn";
+export {
+  observeProviderStatus,
+  type ProviderRejection,
+  type ProviderStatusRecorder,
+} from "./provider-status.js";
 // Pi's root entry also evaluates its TypeBox validator compiler and model
 // stores; Mule needs only these leaf helpers, so it imports them directly and
 // keeps that work out of every host's startup.
 import { isContextOverflow as piIsContextOverflow } from "@earendil-works/pi-ai/utils/overflow";
-import { retryAssistantCall } from "@earendil-works/pi-ai/utils/retry";
+import {
+  DEFAULT_MAX_AGENT_RETRY_DELAY_MS,
+  retryDelayMs,
+} from "@earendil-works/pi-ai/utils/retry";
 import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 import type {
   AssistantMessage,
   AssistantMessageEvent,
   Context,
   Message,
-  RetryCallbacks,
   RetryPolicy,
   SimpleStreamOptions,
   Tool,
@@ -18,11 +25,9 @@ import type {
   ToolResultMessage,
 } from "@earendil-works/pi-ai";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 import * as Cause from "effect/Cause";
 import * as Result from "effect/Result";
 import * as Exit from "effect/Exit";
-import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -181,15 +186,6 @@ const failure = (
   cause?: unknown,
 ): MuleError => ({ _tag: "MuleError", phase, message, cause });
 
-const muleErrorSchema = Schema.Struct({
-  _tag: Schema.Literal("MuleError"),
-  phase: Schema.Literals(["model", "tool", "control", "listener"]),
-  message: Schema.String,
-  cause: Schema.optionalKey(Schema.Unknown),
-});
-const isMuleError = <Value>(value: Value): value is Value & MuleError =>
-  Schema.is(muleErrorSchema)(value);
-
 const identity = (
   kind: MuleIdentityKind,
   parent?: MuleIdentity,
@@ -209,7 +205,6 @@ function resultMessage(
     isError: result.isError,
     timestamp: Date.now(),
   };
-  if (result.details !== undefined) message.details = result.details;
   if (result.usage !== undefined) message.usage = result.usage;
   return message;
 }
@@ -371,6 +366,7 @@ function emitToolResult(
       turn,
       message: messageIdentity,
       value: message,
+      data: executed.result.data,
     });
     return message;
   });
@@ -535,6 +531,7 @@ function streamTurn(
         input.streamOptions?.apiKey;
       const options: SimpleStreamOptions = {
         ...input.streamOptions,
+        maxRetries: 0,
         signal: controller.signal,
       };
       if (resolvedApiKey !== undefined) options.apiKey = resolvedApiKey;
@@ -688,9 +685,8 @@ function streamTurn(
 }
 
 /**
- * Run one assistant call with Pi's bounded retry (`retryAssistantCall`)
- * around it. `input.retry` undefined or disabled means `retryAssistantCall`
- * calls `streamTurn` exactly once and returns its result unchanged.
+ * Retry only the host's typed transient decision, using Pi's maintained delay.
+ * Effect owns interruption of both the active stream and the backoff sleep.
  *
  * Each attempt streams and is recorded exactly like any other turn (so a
  * failed attempt stays in the retained event log for inspection), but a
@@ -705,136 +701,118 @@ function streamTurnWithRetry(
   emit: MuleListener,
 ): Effect.Effect<StreamedTurn, MuleError> {
   return Effect.gen(function* () {
-    const services = yield* Effect.context();
-    const runFork = Effect.runForkWith(services);
-    const runPromise = Effect.runPromiseWith(services);
+    // One turn owns one finite budget, even if its caller updates future policy.
+    const policy = input.retry === undefined ? undefined : { ...input.retry };
+    if (
+      policy?.enabled &&
+      [
+        policy.maxRetries,
+        policy.baseDelayMs,
+        policy.maxAgentDelayMs ?? DEFAULT_MAX_AGENT_RETRY_DELAY_MS,
+      ].some((value) => !Number.isSafeInteger(value) || value < 0)
+    )
+      return yield* Effect.fail(
+        failure(
+          "model",
+          "Retry policy requires non-negative safe-integer counts and delays",
+        ),
+      );
     let latest: StreamedTurn | undefined;
-    let attempt = 0;
-    let retrySignal: AbortSignal | undefined;
+    let calls = 0;
+    let retries = 0;
+    let finished = false;
+    let lastError: string | undefined;
 
     const reportRetry = (
       event: MuleRetryObservation,
-    ): Promise<void> | undefined =>
-      input.onRetry === undefined
-        ? undefined
-        : runPromise(input.onRetry(event));
-
-    const callbacks: RetryCallbacks = {
-      onRetryScheduled: async (attempt, maxAttempts, delayMs, errorMessage) => {
-        // Pi owns the only retry loop and its exponential schedule. A clean
-        // gateway 429 can request a longer delay; extend that same scheduled
-        // sleep (capped), never dispatch a second transport-level retry.
-        const after =
-          latest === undefined
-            ? undefined
-            : input.retryAfterMs?.(latest.message);
-        const extra =
-          after !== undefined &&
-          Number.isSafeInteger(after) &&
-          after >= 0 &&
-          after <= 60_000
-            ? Math.max(0, after - delayMs)
-            : 0;
-        await reportRetry({
-          type: "retry_scheduled",
-          run,
-          turn,
-          attempt,
-          maxAttempts,
-          delayMs: delayMs + extra,
-          errorMessage,
-        });
-        if (extra > 0)
-          await new Promise<void>((resolve) => {
-            const timer = setTimeout(() => {
-              retrySignal?.removeEventListener("abort", abort);
-              resolve();
-            }, extra);
-            const abort = () => {
-              clearTimeout(timer);
-              resolve();
-            };
-            retrySignal?.addEventListener("abort", abort, { once: true });
-            if (retrySignal?.aborted) abort();
-          });
-      },
-      onRetryAttemptStart: () =>
-        reportRetry({ type: "retry_attempt_started", run, turn, attempt }),
-      onRetryFinished: (success, attempt, finalError) =>
-        reportRetry(
+    ): Effect.Effect<void, MuleError> =>
+      input.onRetry === undefined ? Effect.void : input.onRetry(event);
+    const finish = (success: boolean, finalError?: string) =>
+      Effect.gen(function* () {
+        finished = true;
+        yield* reportRetry(
           finalError === undefined
-            ? { type: "retry_finished", run, turn, attempt, success }
+            ? { type: "retry_finished", run, turn, attempt: retries, success }
             : {
                 type: "retry_finished",
                 run,
                 turn,
-                attempt,
+                attempt: retries,
                 success,
                 finalError,
               },
-        ),
-    };
+        );
+      });
 
-    const result = yield* Effect.tryPromise({
-      try: (signal) => {
-        retrySignal = signal;
-        // `retryAssistantCall` only threads `signal` through its own
-        // backoff sleep, never into an in-flight `produce`. Fork `streamTurn`
-        // as its own fiber and interrupt it on `signal` so a cancellation
-        // reaches an active call too, exactly like interrupting this fiber
-        // reached `streamTurn` before retry wrapped it.
-        const produce = async (): Promise<AssistantMessage> => {
-          if (latest !== undefined) {
-            const index = context.indexOf(latest.message);
-            if (index !== -1) context.splice(index, 1);
-          }
-          const fiber = runFork(
-            streamTurn(input, context, run, turn, emit, ++attempt),
-          );
-          const interrupt = () => {
-            runFork(Fiber.interrupt(fiber));
-          };
-          if (signal.aborted) interrupt();
-          else signal.addEventListener("abort", interrupt, { once: true });
-          const exit = await runPromise(Fiber.await(fiber));
-          signal.removeEventListener("abort", interrupt);
-          // `streamTurn`'s own Effect failures (a transport exception, a
-          // listener failure, or this fiber's own interruption) are not
-          // Pi-protocol error messages for `retryAssistantCall` to classify:
-          // unwrap and rethrow the original so the surrounding
-          // `Effect.tryPromise` reports it unchanged, not behind a new
-          // "Pi retry loop failed" layer.
-          if (Exit.isFailure(exit)) {
-            const error = Cause.findErrorOption(exit.cause);
-            throw Option.isSome(error) ? error.value : Cause.squash(exit.cause);
-          }
-          latest = exit.value;
-          return latest.message;
-        };
-        return retryAssistantCall(produce, input.retry, signal, callbacks);
-      },
-      catch: (cause) =>
-        isMuleError(cause)
-          ? cause
-          : failure("model", "Pi retry loop failed", cause),
-    });
-
-    // `produce` always runs at least once before `retryAssistantCall`
-    // settles, so `latest` is always set here.
-    if (latest === undefined)
-      return yield* Effect.die(
-        "streamTurnWithRetry: retryAssistantCall settled without calling produce",
-      );
-    const settled = latest;
-    if (result !== settled.message) {
-      // Pi normalizes an abort during backoff sleep into a fresh
-      // AssistantMessage (the failed attempt's content, `stopReason`
-      // forced to "aborted") instead of replaying `produce`. Reconcile the
-      // dangling failed entry `context` is still holding with that value.
-      const index = context.indexOf(settled.message);
-      if (index !== -1) context[index] = result;
-    }
-    return { identity: settled.identity, message: result };
+    return yield* Effect.gen(function* () {
+      for (;;) {
+        if (latest !== undefined) {
+          const index = context.indexOf(latest.message);
+          if (index !== -1) context.splice(index, 1);
+        }
+        latest = yield* streamTurn(input, context, run, turn, emit, ++calls);
+        const message = latest.message;
+        if (
+          message.stopReason !== "error" ||
+          policy === undefined ||
+          !policy.enabled ||
+          retries >= policy.maxRetries
+        ) {
+          if (retries > 0)
+            yield* finish(
+              message.stopReason !== "error" &&
+                message.stopReason !== "aborted",
+              message.stopReason === "error" ? message.errorMessage : undefined,
+            );
+          return latest;
+        }
+        const retryable = yield* Effect.try({
+          try: () => input.retryable(message),
+          catch: (cause) =>
+            failure("model", "Typed model retry decision failed", cause),
+        });
+        if (!retryable) {
+          if (retries > 0) yield* finish(false, message.errorMessage);
+          return latest;
+        }
+        retries++;
+        lastError = message.errorMessage ?? "Unknown error";
+        const after = yield* Effect.try({
+          try: () => input.retryAfterMs?.(message),
+          catch: (cause) =>
+            failure("model", "Model retry delay observation failed", cause),
+        });
+        const delayMs = Math.max(
+          retryDelayMs(policy, retries),
+          after !== undefined &&
+            Number.isSafeInteger(after) &&
+            after >= 0 &&
+            after <= 60_000
+            ? after
+            : 0,
+        );
+        yield* reportRetry({
+          type: "retry_scheduled",
+          run,
+          turn,
+          attempt: retries,
+          maxAttempts: policy.maxRetries,
+          delayMs,
+          errorMessage: lastError,
+        });
+        yield* Effect.sleep(delayMs);
+        yield* reportRetry({
+          type: "retry_attempt_started",
+          run,
+          turn,
+          attempt: retries,
+        });
+      }
+    }).pipe(
+      Effect.onInterrupt(() =>
+        retries === 0 || finished ? Effect.void : finish(false, lastError),
+      ),
+    );
   });
 }
 

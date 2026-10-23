@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/mule",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "author": "Levi <levi@technomancy.dev>",
   "description": "Effect-native Pi model and tool loop",
   "type": "module",
@@ -42,7 +42,7 @@
     "lint:anti-slop": "node ../../tooling/repository/scripts/lint-package-anti-slop.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.99.2",
+    "@earendil-works/pi-ai": "1.3.0",
     "@fungi.computer/cairn": "workspace:*",
     "effect": "4.0.2",
     "typebox": "1.3.27"

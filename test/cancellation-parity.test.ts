@@ -58,6 +58,7 @@ describe("Mule cancellation and Promise/Effect parity", () => {
       mule.run(
         {
           model: fauxRun([]).settings.model,
+          retryable: () => false,
           stream: () => {
             calls.push("model");
             throw new Error("unreachable");
@@ -87,6 +88,7 @@ describe("Mule cancellation and Promise/Effect parity", () => {
       run(
         {
           model: fauxRun([]).settings.model,
+          retryable: () => false,
           stream: model.stream,
           systemPrompt: "",
           messages: [userMessage("Go")],
@@ -232,6 +234,7 @@ describe("Mule cancellation and Promise/Effect parity", () => {
       mule.run(
         {
           model: fauxRun([]).settings.model,
+          retryable: () => false,
           stream: promiseModel.stream,
           systemPrompt: "",
           messages: [userMessage("Go")],
@@ -253,6 +256,7 @@ describe("Mule cancellation and Promise/Effect parity", () => {
       run(
         {
           model: fauxRun([]).settings.model,
+          retryable: () => false,
           stream: effectModel.stream,
           systemPrompt: "",
           messages: [userMessage("Go")],

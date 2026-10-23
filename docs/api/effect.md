@@ -39,7 +39,7 @@ type MuleRetryObservation =
     };
 ```
 
-One observed Pi-retry event around a single assistant call.
+One observed typed-retry event around a single assistant call.
 
 ---
 
@@ -272,6 +272,24 @@ Run Pi's model/tool loop inside Effect without changing Pi's values.
 [`MuleError`](index.md#muleerror)\>
 
 ## References
+
+### observeProviderStatus
+
+Re-exports [observeProviderStatus](index.md#observeproviderstatus)
+
+---
+
+### ProviderRejection
+
+Re-exports [ProviderRejection](index.md#providerrejection)
+
+---
+
+### ProviderStatusRecorder
+
+Re-exports [ProviderStatusRecorder](index.md#providerstatusrecorder)
+
+---
 
 ### MuleCompletedTurn
 

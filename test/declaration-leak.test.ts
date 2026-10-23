@@ -33,7 +33,7 @@ describe("Mule declaration surfaces", () => {
 
     expect(
       [...graph.keys()].map((path) => path.slice(dist.length + 1)).sort(),
-    ).toEqual(["contract.d.ts", "index.d.ts"]);
+    ).toEqual(["contract.d.ts", "index.d.ts", "provider-status.d.ts"]);
     for (const [path, source] of graph)
       expect(importsEffect(source), path).toBe(false);
   });

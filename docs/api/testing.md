@@ -16,6 +16,7 @@
 type FauxModel = Readonly<{
   model: Model<Api>;
   stream: FauxProviderHandle["provider"]["streamSimple"];
+  retryable: (message) => boolean;
   setResponses: (replies) => void;
   state: FauxProviderHandle["state"];
 }>;

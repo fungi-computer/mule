@@ -49,7 +49,8 @@ export type MuleError = {
 /** Result produced by a tool before Mule forms Pi's correlated result message. */
 export type MuleToolResult = {
   readonly content: (TextContent | ImageContent)[];
-  readonly details?: JsonValue | undefined;
+  /** Application payload for listeners, never part of a model message. */
+  readonly data?: JsonValue | undefined;
   readonly usage?: Usage | undefined;
   readonly isError: boolean;
   readonly terminate?: boolean | undefined;
@@ -111,6 +112,8 @@ export type MuleEvent =
       readonly turn: MuleIdentity;
       readonly message: MuleIdentity;
       readonly value: Message;
+      /** Application payload independent of the completed model message. */
+      readonly data?: JsonValue | undefined;
     }
   | {
       readonly type: "tool_execution_start";
@@ -187,22 +190,31 @@ export type MuleRunSettings = {
   /** Continue a durable, completed assistant turn before requesting another response. */
   readonly resume?: MuleResume | undefined;
   /** Pi stream options. Cancellation is the run's interruption, never a signal here. */
-  readonly streamOptions?: Omit<SimpleStreamOptions, "signal"> | undefined;
+  /** Provider-native retries are disabled; the typed host policy owns retry. */
+  readonly streamOptions?:
+    Omit<SimpleStreamOptions, "signal" | "maxRetries"> | undefined;
   /** Maximum silence between provider stream events, in milliseconds. */
   readonly modelStreamIdleTimeoutMs?: number | undefined;
   readonly toolExecution?: "parallel" | "sequential" | undefined;
   /**
-   * Pi's bounded retry policy around each assistant call (`retryAssistantCall`).
+   * Bounded retry around each assistant call, using Pi's exponential delay.
    * Undefined means no retry, matching pi-ai's own default. Hosts that want
    * Pi coding-agent's numbers pass `piCodingAgentRetryDefaults`.
+   * Enabled policy counts and delays must be non-negative safe integers.
+   * Each assistant turn captures its policy before requesting the model.
    */
   readonly retry?: RetryPolicy | undefined;
+  /**
+   * Host-owned typed decision for this exact assistant message. Only true
+   * permits retry; unknown messages return false, never a decision from prose.
+   */
+  readonly retryable: (message: AssistantMessage) => boolean;
   /** Provider's bounded Retry-After evidence for the last assistant error. */
   readonly retryAfterMs?:
     ((message: AssistantMessage) => number | undefined) | undefined;
 };
 
-/** One observed Pi-retry event around a single assistant call. */
+/** One observed typed-retry event around a single assistant call. */
 export type MuleRetryObservation =
   | {
       readonly type: "retry_scheduled";

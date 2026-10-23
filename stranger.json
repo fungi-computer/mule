@@ -9,6 +9,8 @@
     "package/dist/effect.js",
     "package/dist/index.d.ts",
     "package/dist/index.js",
+    "package/dist/provider-status.d.ts",
+    "package/dist/provider-status.js",
     "package/dist/testing.d.ts",
     "package/dist/testing.js",
     "package/docs/api/README.md",
@@ -19,7 +21,11 @@
   ],
   "localDependencies": ["../cairn"],
   "runtimeFixture": "test/stranger/runtime.mjs",
-  "typecheckFixture": "test/stranger/consumer.mts",
+  "typechecks": [
+    {
+      "fixture": "test/stranger/consumer.mts"
+    }
+  ],
   "consumerDevDependencies": {
     "@modelcontextprotocol/sdk": "1.30.0"
   },

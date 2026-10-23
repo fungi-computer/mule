@@ -48,6 +48,7 @@ describe("Mule's Pi loop", () => {
     const execution = mule.run(
       {
         model: faux.model,
+        retryable: () => false,
         stream: faux.stream,
         systemPrompt: "Answer concisely.",
         messages: [userMessage("Hi")],
@@ -93,8 +94,9 @@ describe("Mule's Pi loop", () => {
     ).toBe("hello");
   });
 
-  it("feeds Pi tool results into the next Pi turn without a transcript adapter", async () => {
+  it("keeps application data beside model-only Pi tool results across turns", async () => {
     const faux = fauxModel([]);
+    const events: MuleEvent[] = [];
     let secondContext: Context | undefined;
     faux.setResponses([
       fauxAssistantMessage(fauxToolCall("echo", { text: "hello" }), {
@@ -121,7 +123,7 @@ describe("Mule's Pi loop", () => {
                 type: "result" as const,
                 result: {
                   content: [{ type: "text" as const, text: input.text }],
-                  details: { echoed: input.text },
+                  data: { echoed: input.text },
                   isError: false,
                 },
               }),
@@ -131,13 +133,20 @@ describe("Mule's Pi loop", () => {
     };
 
     const outcome = await Effect.runPromise(
-      run({
-        model: faux.model,
-        stream: faux.stream,
-        systemPrompt: "Use the tool.",
-        messages: [userMessage("Echo hello")],
-        tools: [tool],
-      }),
+      run(
+        {
+          model: faux.model,
+          retryable: () => false,
+          stream: faux.stream,
+          systemPrompt: "Use the tool.",
+          messages: [userMessage("Echo hello")],
+          tools: [tool],
+        },
+        (event) =>
+          Effect.sync(() => {
+            events.push(event);
+          }),
+      ),
     );
 
     expect(faux.state.callCount).toBe(2);
@@ -153,8 +162,19 @@ describe("Mule's Pi loop", () => {
     expect(toolResult).toMatchObject({
       toolName: "echo",
       content: [{ type: "text", text: "hello" }],
-      details: { echoed: "hello" },
       isError: false,
+    });
+    expect(toolResult).not.toHaveProperty("details");
+    expect(toolResult).not.toHaveProperty("data");
+    expect(toolResult).not.toHaveProperty("meta");
+    expect(
+      events.find(
+        (event) =>
+          event.type === "message_end" && event.value.role === "toolResult",
+      ),
+    ).toMatchObject({
+      data: { echoed: "hello" },
+      value: toolResult,
     });
   });
 
@@ -182,6 +202,7 @@ describe("Mule's Pi loop", () => {
     const outcome = await Effect.runPromise(
       run({
         model: faux.model,
+        retryable: () => false,
         stream: faux.stream,
         systemPrompt: "Recover safely.",
         messages: [userMessage("Do it")],
@@ -239,6 +260,7 @@ describe("Mule's Pi loop", () => {
       run(
         {
           model: faux.model,
+          retryable: () => false,
           stream: faux.stream,
           systemPrompt: "Edit the file.",
           messages: [userMessage("Edit it")],
@@ -282,6 +304,7 @@ describe("Mule's Pi loop", () => {
       run(
         {
           model: faux.model,
+          retryable: () => false,
           stream: faux.stream,
           systemPrompt: "Edit the file.",
           messages: [userMessage("Edit it")],
@@ -320,6 +343,7 @@ describe("Mule's Pi loop", () => {
     const outcome = await Effect.runPromise(
       run({
         model: faux.model,
+        retryable: () => false,
         stream: faux.stream,
         systemPrompt: "Edit the file.",
         messages: [userMessage("Edit it")],
@@ -354,6 +378,7 @@ describe("Mule's Pi loop", () => {
     const outcome = await Effect.runPromise(
       run({
         model: faux.model,
+        retryable: () => false,
         stream: faux.stream,
         systemPrompt: "Continue when asked.",
         messages: [userMessage("Start")],
