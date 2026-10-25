@@ -5,7 +5,7 @@ import type {
   Message,
   Model,
 } from "@earendil-works/pi-ai";
-import { type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
+import { type FauxResponseStep } from "../src/testing.js";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 
 import type {

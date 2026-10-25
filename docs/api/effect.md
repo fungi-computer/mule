@@ -108,9 +108,9 @@ Decode and authorize one exact Pi tool call before it can execute.
 
 ###### Parameters
 
-| Parameter | Type       |
-| --------- | ---------- |
-| `call`    | `ToolCall` |
+| Parameter | Type                    |
+| --------- | ----------------------- |
+| `call`    | [`ToolCall`](#toolcall) |
 
 ###### Returns
 
@@ -150,16 +150,16 @@ fiber; the run then ends with a `cancelled` `run_end`.
 
 #### Type Declaration
 
-| Name                     | Type                                                                                                  | Description                                                                                                                                                                                                             |
-| ------------------------ | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `prepareSystemPrompt()?` | () => `Effect.Effect`\<`string`, [`MuleError`](index.md#muleerror)\>                                  | Rebuild the model system prompt immediately before each provider request.                                                                                                                                               |
-| `tools?`                 | readonly [`MuleTool`](#muletool)[]                                                                    | -                                                                                                                                                                                                                       |
-| `resolveApiKey()?`       | (`provider`) => `Effect.Effect`\<`string` \| `undefined`, [`MuleError`](index.md#muleerror)\>         | Resolve a fresh provider credential immediately before each Pi call.                                                                                                                                                    |
-| `getSteeringMessages()?` | () => `Effect.Effect`\<readonly `Message`[], [`MuleError`](index.md#muleerror)\>                      | Pull messages that should steer the active run at Pi's safe point.                                                                                                                                                      |
-| `getFollowUpMessages()?` | () => `Effect.Effect`\<readonly `Message`[], [`MuleError`](index.md#muleerror)\>                      | Pull messages queued until the run would otherwise finish.                                                                                                                                                              |
-| `prepareNextTurn()?`     | (`turn`) => `Effect.Effect`\<readonly `Message`[] \| `undefined`, [`MuleError`](index.md#muleerror)\> | Pi's between-turn point: after a turn's tool results and before the next assistant request of the same run. Return a replacement context, such as one rebuilt after compaction, or `undefined` to keep the current one. |
-| `shouldStopAfterTurn()?` | (`turn`) => `Effect.Effect`\<`boolean`, [`MuleError`](index.md#muleerror)\>                           | Request a graceful stop after the current Pi turn has fully settled.                                                                                                                                                    |
-| `onRetry()?`             | (`event`) => `Effect.Effect`\<`void`, [`MuleError`](index.md#muleerror)\>                             | Effect-native observation sink for Pi's retry policy (`retry`), one call per scheduled or finished retry.                                                                                                               |
+| Name                     | Type                                                                                                              | Description                                                                                                                                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prepareSystemPrompt()?` | () => `Effect.Effect`\<`string`, [`MuleError`](index.md#muleerror)\>                                              | Rebuild the model system prompt immediately before each provider request.                                                                                                                                               |
+| `tools?`                 | readonly [`MuleTool`](#muletool)[]                                                                                | -                                                                                                                                                                                                                       |
+| `resolveApiKey()?`       | (`provider`) => `Effect.Effect`\<`string` \| `undefined`, [`MuleError`](index.md#muleerror)\>                     | Resolve a fresh provider credential immediately before each Pi call.                                                                                                                                                    |
+| `getSteeringMessages()?` | () => `Effect.Effect`\<readonly [`Message`](#message)[], [`MuleError`](index.md#muleerror)\>                      | Pull messages that should steer the active run at Pi's safe point.                                                                                                                                                      |
+| `getFollowUpMessages()?` | () => `Effect.Effect`\<readonly [`Message`](#message)[], [`MuleError`](index.md#muleerror)\>                      | Pull messages queued until the run would otherwise finish.                                                                                                                                                              |
+| `prepareNextTurn()?`     | (`turn`) => `Effect.Effect`\<readonly [`Message`](#message)[] \| `undefined`, [`MuleError`](index.md#muleerror)\> | Pi's between-turn point: after a turn's tool results and before the next assistant request of the same run. Return a replacement context, such as one rebuilt after compaction, or `undefined` to keep the current one. |
+| `shouldStopAfterTurn()?` | (`turn`) => `Effect.Effect`\<`boolean`, [`MuleError`](index.md#muleerror)\>                                       | Request a graceful stop after the current Pi turn has fully settled.                                                                                                                                                    |
+| `onRetry()?`             | (`event`) => `Effect.Effect`\<`void`, [`MuleError`](index.md#muleerror)\>                                         | Effect-native observation sink for Pi's retry policy (`retry`), one call per scheduled or finished retry.                                                                                                               |
 
 ---
 
@@ -192,6 +192,1645 @@ Run one complete Pi model/tool loop.
 
 `Effect.Effect`\<[`MuleRunOutcome`](index.md#mulerunoutcome),
 [`MuleError`](index.md#muleerror)\>
+
+---
+
+### ThinkingLevel
+
+```ts
+type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+```
+
+Provider-neutral reasoning effort requested by a caller.
+
+---
+
+### ModelThinkingLevel
+
+```ts
+type ModelThinkingLevel = "off" | ThinkingLevel;
+```
+
+Effective reasoning effort, including disabled thinking.
+
+---
+
+### KnownApi
+
+```ts
+type KnownApi =
+  | "openai-completions"
+  | "mistral-conversations"
+  | "openai-responses"
+  | "azure-openai-responses"
+  | "openai-codex-responses"
+  | "anthropic-messages"
+  | "bedrock-converse-stream"
+  | "google-generative-ai"
+  | "google-vertex"
+  | "pi-messages";
+```
+
+Built-in chat APIs recognized by the pinned Pi adapter.
+
+---
+
+### Api
+
+```ts
+type Api = KnownApi | (string & object);
+```
+
+Built-in or caller-defined chat API identifier.
+
+---
+
+### ProviderId
+
+```ts
+type ProviderId = string;
+```
+
+Provider identifier carried with a model or assistant message.
+
+---
+
+### ToolChoice
+
+```ts
+type ToolChoice = "auto" | "none";
+```
+
+Provider-neutral choice to allow or disable tools.
+
+---
+
+### SamplingParams
+
+```ts
+type SamplingParams = JsonObject;
+```
+
+Provider sampling fields passed through unchanged.
+
+---
+
+### SamplingParamsByThinkingLevel
+
+```ts
+type SamplingParamsByThinkingLevel = Partial<
+  Record<ModelThinkingLevel, SamplingParams>
+>;
+```
+
+Sampling overrides selected by reasoning effort.
+
+---
+
+### ThinkingBudgets
+
+```ts
+type ThinkingBudgets = object;
+```
+
+Token budgets for providers that meter reasoning separately.
+
+#### Properties
+
+##### minimal?
+
+```ts
+optional minimal?: number;
+```
+
+##### low?
+
+```ts
+optional low?: number;
+```
+
+##### medium?
+
+```ts
+optional medium?: number;
+```
+
+##### high?
+
+```ts
+optional high?: number;
+```
+
+---
+
+### Transport
+
+```ts
+type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
+```
+
+Preferred provider stream transport.
+
+---
+
+### ProviderEnv
+
+```ts
+type ProviderEnv = Record<string, string>;
+```
+
+Request-scoped provider environment overrides.
+
+---
+
+### ProviderHeaders
+
+```ts
+type ProviderHeaders = Record<string, string | null>;
+```
+
+Provider headers; null removes a default header.
+
+---
+
+### FetchFunction
+
+```ts
+type FetchFunction = typeof globalThis.fetch;
+```
+
+Fetch implementation supplied to the provider adapter.
+
+---
+
+### ProviderResponse
+
+```ts
+type ProviderResponse = object;
+```
+
+HTTP status and headers observed before stream consumption.
+
+#### Properties
+
+##### status
+
+```ts
+status: number;
+```
+
+##### headers
+
+```ts
+headers: Record<string, string>;
+```
+
+---
+
+### ProviderRequestOptions
+
+```ts
+type ProviderRequestOptions<TModel> = object;
+```
+
+Authentication, transport and lifecycle hooks for one provider request.
+
+#### Type Parameters
+
+| Type Parameter | Default type                         |
+| -------------- | ------------------------------------ |
+| `TModel`       | [`Model`](#model-1)\<[`Api`](#api)\> |
+
+#### Properties
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+##### telemetryContext?
+
+```ts
+optional telemetryContext?: TelemetryContext;
+```
+
+##### apiKey?
+
+```ts
+optional apiKey?: string;
+```
+
+##### fetch?
+
+```ts
+optional fetch?: FetchFunction;
+```
+
+Override HTTP transport for this request.
+
+##### env?
+
+```ts
+optional env?: ProviderEnv;
+```
+
+##### onPayload?
+
+```ts
+optional onPayload?: (payload, model) =>
+  | ProviderData
+  | undefined
+| Promise<ProviderData | undefined>;
+```
+
+Observe or replace the provider payload before dispatch.
+
+###### Parameters
+
+| Parameter | Type                            |
+| --------- | ------------------------------- |
+| `payload` | [`ProviderData`](#providerdata) |
+| `model`   | `TModel`                        |
+
+###### Returns
+
+\| [`ProviderData`](#providerdata) \| `undefined` \|
+`Promise`\<[`ProviderData`](#providerdata) \| `undefined`\>
+
+##### onResponse?
+
+```ts
+optional onResponse?: (response, model) => void | Promise<void>;
+```
+
+Observe status and headers before provider stream consumption.
+
+###### Parameters
+
+| Parameter  | Type                                    |
+| ---------- | --------------------------------------- |
+| `response` | [`ProviderResponse`](#providerresponse) |
+| `model`    | `TModel`                                |
+
+###### Returns
+
+`void` \| `Promise`\<`void`\>
+
+##### headers?
+
+```ts
+optional headers?: ProviderHeaders;
+```
+
+##### timeoutMs?
+
+```ts
+optional timeoutMs?: number;
+```
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: number;
+```
+
+##### maxRetryDelayMs?
+
+```ts
+optional maxRetryDelayMs?: number;
+```
+
+---
+
+### StreamOptions
+
+```ts
+type StreamOptions = object & ProviderRequestOptions;
+```
+
+Common provider stream controls, independent of any SDK.
+
+#### Type Declaration
+
+| Name                         | Type                                               | Description                                              |
+| ---------------------------- | -------------------------------------------------- | -------------------------------------------------------- |
+| `onProviderStreamEvent()?`   | (`data`, `model`) => `void` \| `Promise`\<`void`\> | Observe an adapter-parsed event before Pi normalizes it. |
+| `temperature?`               | `number`                                           | -                                                        |
+| `samplingParams?`            | [`SamplingParams`](#samplingparams)                | -                                                        |
+| `maxTokens?`                 | `number`                                           | -                                                        |
+| `transport?`                 | [`Transport`](#transport)                          | -                                                        |
+| `cacheRetention?`            | `CacheRetention`                                   | -                                                        |
+| `sessionId?`                 | `string`                                           | -                                                        |
+| `websocketConnectTimeoutMs?` | `number`                                           | -                                                        |
+| `metadata?`                  | [`JsonObject`](#jsonobject)                        | -                                                        |
+
+---
+
+### SimpleStreamOptions
+
+```ts
+type SimpleStreamOptions = object & StreamOptions;
+```
+
+Provider-neutral model request options used by Mule.
+
+#### Type Declaration
+
+| Name               | Type                                                           |
+| ------------------ | -------------------------------------------------------------- |
+| `toolChoice?`      | [`ToolChoice`](#toolchoice)                                    |
+| `reasoning?`       | [`ThinkingLevel`](#thinkinglevel)                              |
+| `deferred?`        | \| `boolean` \| \{ `window?`: `"15m"` \| `"1h"` \| `"24h"`; \} |
+| `thinkingBudgets?` | [`ThinkingBudgets`](#thinkingbudgets)                          |
+
+---
+
+### TextContent
+
+```ts
+type TextContent = object;
+```
+
+Text block with an optional provider continuity signature.
+
+#### Properties
+
+##### type
+
+```ts
+type: "text";
+```
+
+##### text
+
+```ts
+text: string;
+```
+
+##### textSignature?
+
+```ts
+optional textSignature?: string;
+```
+
+---
+
+### ThinkingContent
+
+```ts
+type ThinkingContent = object;
+```
+
+Reasoning block, including opaque redacted provider thinking.
+
+#### Properties
+
+##### type
+
+```ts
+type: "thinking";
+```
+
+##### thinking
+
+```ts
+thinking: string;
+```
+
+##### thinkingSignature?
+
+```ts
+optional thinkingSignature?: string;
+```
+
+##### redacted?
+
+```ts
+optional redacted?: boolean;
+```
+
+---
+
+### ImageContent
+
+```ts
+type ImageContent = object;
+```
+
+Base64 image bytes with their media type.
+
+#### Properties
+
+##### type
+
+```ts
+type: "image";
+```
+
+##### data
+
+```ts
+data: string;
+```
+
+##### mimeType
+
+```ts
+mimeType: string;
+```
+
+---
+
+### ToolCall
+
+```ts
+type ToolCall = object;
+```
+
+Model-requested tool invocation with JSON arguments.
+
+#### Properties
+
+##### type
+
+```ts
+type: "toolCall";
+```
+
+##### id
+
+```ts
+id: string;
+```
+
+##### name
+
+```ts
+name: string;
+```
+
+##### arguments
+
+```ts
+arguments: JsonObject;
+```
+
+##### thoughtSignature?
+
+```ts
+optional thoughtSignature?: string;
+```
+
+##### namespace?
+
+```ts
+optional namespace?: string;
+```
+
+##### argumentsError?
+
+```ts
+optional argumentsError?: string;
+```
+
+---
+
+### Usage
+
+```ts
+type Usage = object;
+```
+
+Token counts and provider costs for one response or tool result.
+
+#### Properties
+
+##### input
+
+```ts
+input: number;
+```
+
+##### output
+
+```ts
+output: number;
+```
+
+##### cacheRead
+
+```ts
+cacheRead: number;
+```
+
+##### cacheWrite
+
+```ts
+cacheWrite: number;
+```
+
+##### cacheWrite1h?
+
+```ts
+optional cacheWrite1h?: number;
+```
+
+##### reasoning?
+
+```ts
+optional reasoning?: number;
+```
+
+##### totalTokens
+
+```ts
+totalTokens: number;
+```
+
+##### cost
+
+```ts
+cost: object;
+```
+
+###### input
+
+```ts
+input: number;
+```
+
+###### output
+
+```ts
+output: number;
+```
+
+###### cacheRead
+
+```ts
+cacheRead: number;
+```
+
+###### cacheWrite
+
+```ts
+cacheWrite: number;
+```
+
+###### total
+
+```ts
+total: number;
+```
+
+---
+
+### StopReason
+
+```ts
+type StopReason =
+  "pending" | "stop" | "length" | "toolUse" | "error" | "aborted" | "deferred";
+```
+
+Provider outcome for an assistant response.
+
+---
+
+### JsonValue
+
+```ts
+type JsonValue =
+  null | boolean | number | string | readonly JsonValue[] | JsonObject;
+```
+
+JSON data carried by messages and tool results.
+
+---
+
+### ProviderValue
+
+```ts
+type ProviderValue =
+  | undefined
+  | null
+  | boolean
+  | number
+  | string
+  | Uint8Array
+  | AbortSignal
+  | readonly ProviderValue[]
+  | ProviderData;
+```
+
+Provider request/event values, including optional fields, binary bytes and
+cancellation.
+
+---
+
+### ProviderData
+
+```ts
+type ProviderData = object;
+```
+
+Parsed provider request or event fields; Pi owns the provider-specific grammar.
+
+#### Index Signature
+
+```ts
+[key: string]: ProviderValue
+```
+
+---
+
+### JsonObject
+
+```ts
+type JsonObject = object;
+```
+
+Named JSON properties in tool arguments or message metadata.
+
+#### Index Signature
+
+```ts
+[key: string]: JsonValue
+```
+
+---
+
+### DeferredHandle
+
+```ts
+type DeferredHandle = object;
+```
+
+Provider receipt used to recover a deferred assistant response.
+
+#### Properties
+
+##### provider
+
+```ts
+provider: string;
+```
+
+##### modelId
+
+```ts
+modelId: string;
+```
+
+##### api
+
+```ts
+api: string;
+```
+
+##### id
+
+```ts
+id: string;
+```
+
+##### expiresAt?
+
+```ts
+optional expiresAt?: number;
+```
+
+##### pollAfterMs?
+
+```ts
+optional pollAfterMs?: number;
+```
+
+##### data?
+
+```ts
+optional data?: JsonValue;
+```
+
+---
+
+### SystemMessage
+
+```ts
+type SystemMessage = object;
+```
+
+Prompt and tool-set update at a point in the transcript.
+
+#### Properties
+
+##### role
+
+```ts
+role: "system";
+```
+
+##### content
+
+```ts
+content: string | TextContent[];
+```
+
+##### sections?
+
+```ts
+optional sections?: Record<string, string | null>;
+```
+
+##### toolsAdded?
+
+```ts
+optional toolsAdded?: Tool[];
+```
+
+##### toolsRemoved?
+
+```ts
+optional toolsRemoved?: ToolReference[];
+```
+
+##### timestamp
+
+```ts
+timestamp: number;
+```
+
+---
+
+### UserMessage
+
+```ts
+type UserMessage = object;
+```
+
+User text and image input with its timestamp.
+
+#### Properties
+
+##### role
+
+```ts
+role: "user";
+```
+
+##### content
+
+```ts
+content:
+  | string
+  | (TextContent | ImageContent)[];
+```
+
+##### timestamp
+
+```ts
+timestamp: number;
+```
+
+---
+
+### AssistantMessage
+
+```ts
+type AssistantMessage = object;
+```
+
+Provider response, usage and terminal reason, preserved by Mule.
+
+#### Properties
+
+##### role
+
+```ts
+role: "assistant";
+```
+
+##### content
+
+```ts
+content: (
+  | TextContent
+  | ThinkingContent
+  | ToolCall)[];
+```
+
+##### api
+
+```ts
+api: Api;
+```
+
+##### provider
+
+```ts
+provider: ProviderId;
+```
+
+##### model
+
+```ts
+model: string;
+```
+
+##### responseModel?
+
+```ts
+optional responseModel?: string;
+```
+
+##### responseId?
+
+```ts
+optional responseId?: string;
+```
+
+##### providerThinkingLevel?
+
+```ts
+optional providerThinkingLevel?: string;
+```
+
+##### thinkingLevel?
+
+```ts
+optional thinkingLevel?: ModelThinkingLevel;
+```
+
+##### diagnostics?
+
+```ts
+optional diagnostics?: AssistantMessageDiagnostic[];
+```
+
+##### usage
+
+```ts
+usage: Usage;
+```
+
+##### stopReason
+
+```ts
+stopReason: StopReason;
+```
+
+##### deferred?
+
+```ts
+optional deferred?: DeferredHandle;
+```
+
+##### errorMessage?
+
+```ts
+optional errorMessage?: string;
+```
+
+##### rawStopReason?
+
+```ts
+optional rawStopReason?: string;
+```
+
+##### endTurn?
+
+```ts
+optional endTurn?: boolean;
+```
+
+##### timestamp
+
+```ts
+timestamp: number;
+```
+
+##### durationMs?
+
+```ts
+optional durationMs?: number;
+```
+
+---
+
+### NestedToolCallRecord
+
+```ts
+type NestedToolCallRecord = object;
+```
+
+Bounded evidence of a tool invocation made inside another tool.
+
+#### Properties
+
+##### id
+
+```ts
+id: string;
+```
+
+##### name
+
+```ts
+name: string;
+```
+
+##### arguments?
+
+```ts
+optional arguments?: JsonObject;
+```
+
+##### argumentsBytes?
+
+```ts
+optional argumentsBytes?: number;
+```
+
+##### status
+
+```ts
+status: "ok" | "error" | "unfinished";
+```
+
+##### durationMs?
+
+```ts
+optional durationMs?: number;
+```
+
+##### error?
+
+```ts
+optional error?: string;
+```
+
+---
+
+### NestedToolCalls
+
+```ts
+type NestedToolCalls = object;
+```
+
+Recorded nested invocations and whether the record is complete.
+
+#### Properties
+
+##### calls
+
+```ts
+calls: NestedToolCallRecord[];
+```
+
+##### complete
+
+```ts
+complete: boolean;
+```
+
+---
+
+### ToolResultMessage
+
+```ts
+type ToolResultMessage = object;
+```
+
+Correlated tool output with optional JSON details and usage.
+
+#### Properties
+
+##### role
+
+```ts
+role: "toolResult";
+```
+
+##### toolCallId
+
+```ts
+toolCallId: string;
+```
+
+##### toolName
+
+```ts
+toolName: string;
+```
+
+##### content
+
+```ts
+content: (TextContent | ImageContent)[];
+```
+
+##### details?
+
+```ts
+optional details?: JsonValue;
+```
+
+##### usage?
+
+```ts
+optional usage?: Usage;
+```
+
+##### nestedCalls?
+
+```ts
+optional nestedCalls?: NestedToolCalls;
+```
+
+##### isError
+
+```ts
+isError: boolean;
+```
+
+##### timestamp
+
+```ts
+timestamp: number;
+```
+
+##### durationMs?
+
+```ts
+optional durationMs?: number;
+```
+
+---
+
+### Message
+
+```ts
+type Message =
+  SystemMessage | UserMessage | AssistantMessage | ToolResultMessage;
+```
+
+One system, user, assistant or tool-result transcript entry.
+
+---
+
+### GrammarFormat
+
+```ts
+type GrammarFormat = "openai_lark" | "openai_regex";
+```
+
+Provider grammar formats available for constrained sampling.
+
+---
+
+### GrammarVariants
+
+```ts
+type GrammarVariants = Partial<Record<GrammarFormat, string>>;
+```
+
+Grammar text supplied for each supported provider format.
+
+---
+
+### ConstrainedSamplingConfig
+
+```ts
+type ConstrainedSamplingConfig =
+  | {
+      type: "json_schema";
+      strict: "prefer" | "require";
+    }
+  | {
+      type: "grammar";
+      variants: GrammarVariants;
+    };
+```
+
+Provider constraint for a tool declaration.
+
+---
+
+### Tool
+
+```ts
+type Tool<TParameters> = object;
+```
+
+Model-visible tool name, description and TypeBox argument schema.
+
+#### Type Parameters
+
+| Type Parameter                    | Default type |
+| --------------------------------- | ------------ |
+| `TParameters` _extends_ `TSchema` | `TSchema`    |
+
+#### Properties
+
+##### name
+
+```ts
+name: string;
+```
+
+##### description
+
+```ts
+description: string;
+```
+
+##### parameters
+
+```ts
+parameters: TParameters;
+```
+
+##### constrainedSampling?
+
+```ts
+optional constrainedSampling?: false | ConstrainedSamplingConfig;
+```
+
+---
+
+### ToolReference
+
+```ts
+type ToolReference = object;
+```
+
+Named tool removed by a transcript system update.
+
+#### Properties
+
+##### name
+
+```ts
+name: string;
+```
+
+---
+
+### Context
+
+```ts
+type Context = object;
+```
+
+Model request context; Pi adapters normalize it before provider dispatch.
+
+#### Properties
+
+##### systemPrompt?
+
+```ts
+optional systemPrompt?: string;
+```
+
+##### messages
+
+```ts
+messages: Message[];
+```
+
+##### tools?
+
+```ts
+optional tools?: Tool[];
+```
+
+---
+
+### AssistantMessageEvent
+
+```ts
+type AssistantMessageEvent =
+  | {
+      type: "start";
+      partial: AssistantMessage;
+    }
+  | {
+      type: "text_start";
+      contentIndex: number;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "text_delta";
+      contentIndex: number;
+      delta: string;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "text_end";
+      contentIndex: number;
+      content: string;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "thinking_start";
+      contentIndex: number;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "thinking_delta";
+      contentIndex: number;
+      delta: string;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "thinking_end";
+      contentIndex: number;
+      content: string;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "toolcall_start";
+      contentIndex: number;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "toolcall_delta";
+      contentIndex: number;
+      delta: string;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "toolcall_end";
+      contentIndex: number;
+      toolCall: ToolCall;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "done";
+      reason: Extract<StopReason, "stop" | "length" | "toolUse" | "deferred">;
+      message: AssistantMessage;
+    }
+  | {
+      type: "error";
+      reason: Extract<StopReason, "aborted" | "error">;
+      error: AssistantMessage;
+    };
+```
+
+Partial updates and the terminal event for an assistant stream.
+
+---
+
+### BaseModel
+
+```ts
+type BaseModel<TApi> = object;
+```
+
+Catalog fields shared by chat model definitions.
+
+#### Type Parameters
+
+| Type Parameter            |
+| ------------------------- |
+| `TApi` _extends_ `string` |
+
+#### Properties
+
+##### id
+
+```ts
+id: string;
+```
+
+##### name
+
+```ts
+name: string;
+```
+
+##### api
+
+```ts
+api: TApi;
+```
+
+##### provider
+
+```ts
+provider: ProviderId;
+```
+
+##### baseUrl
+
+```ts
+baseUrl: string;
+```
+
+##### input
+
+```ts
+input: ModelInputModality[];
+```
+
+##### inputLimits?
+
+```ts
+optional inputLimits?: ModelInputLimits;
+```
+
+##### cost
+
+```ts
+cost: ModelCost;
+```
+
+##### headers?
+
+```ts
+optional headers?: Record<string, string>;
+```
+
+---
+
+### Model
+
+```ts
+type Model<TApi> = object & BaseModel<TApi>;
+```
+
+Chat model configuration accepted by Mule and its Pi adapter.
+
+#### Type Declaration
+
+| Name                             | Type                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type?`                          | `"chat"`                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `reasoning`                      | `boolean`                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `thinkingLevelMap?`              | `ThinkingLevelMap`                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `promptCache?`                   | `ModelPromptCache`                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `contextWindow`                  | `number`                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `maxTokens`                      | `number`                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `samplingParams?`                | [`SamplingParams`](#samplingparams)                                                                                                                                                                                                                                                                                                                                                                                               |
+| `samplingParamsByThinkingLevel?` | [`SamplingParamsByThinkingLevel`](#samplingparamsbythinkinglevel)                                                                                                                                                                                                                                                                                                                                                                 |
+| `compat?`                        | `TApi` _extends_ `"openai-completions"` ? `OpenAICompletionsCompat` : `TApi` _extends_ \| `"openai-responses"` \| `"azure-openai-responses"` \| `"openai-codex-responses"` ? `OpenAIResponsesCompat` : `TApi` _extends_ `"anthropic-messages"` ? `AnthropicMessagesCompat` : `TApi` _extends_ `"bedrock-converse-stream"` ? `BedrockCompat` : `TApi` _extends_ `"mistral-conversations"` ? `MistralConversationsCompat` : `never` |
+
+#### Type Parameters
+
+| Type Parameter                 |
+| ------------------------------ |
+| `TApi` _extends_ [`Api`](#api) |
+
+---
+
+### DiagnosticErrorInfo
+
+```ts
+type DiagnosticErrorInfo = object;
+```
+
+Serializable diagnostic information retained with an assistant message.
+
+#### Properties
+
+##### name?
+
+```ts
+optional name?: string;
+```
+
+##### message
+
+```ts
+message: string;
+```
+
+##### stack?
+
+```ts
+optional stack?: string;
+```
+
+##### code?
+
+```ts
+optional code?: string | number;
+```
+
+---
+
+### AssistantMessageDiagnostic
+
+```ts
+type AssistantMessageDiagnostic = object;
+```
+
+Timestamped provider diagnostic with optional JSON details.
+
+#### Properties
+
+##### type
+
+```ts
+type: string;
+```
+
+##### timestamp
+
+```ts
+timestamp: number;
+```
+
+##### error?
+
+```ts
+optional error?: DiagnosticErrorInfo;
+```
+
+##### details?
+
+```ts
+optional details?: JsonObject;
+```
+
+---
+
+### AssistantMessageEventStream
+
+```ts
+type AssistantMessageEventStream = object &
+  AsyncIterable<AssistantMessageEvent>;
+```
+
+Only the stream operations consumed by Mule. Pi's concrete stream satisfies this
+port.
+
+#### Type Declaration
+
+| Name       | Type                                                       | Description                                      |
+| ---------- | ---------------------------------------------------------- | ------------------------------------------------ |
+| `result()` | () => `Promise`\<[`AssistantMessage`](#assistantmessage)\> | Await the authoritative final assistant message. |
+
+---
+
+### RetryPolicy
+
+```ts
+type RetryPolicy = object;
+```
+
+Bounded assistant-call retries with capped exponential delays.
+
+#### Properties
+
+##### enabled
+
+```ts
+enabled: boolean;
+```
+
+##### maxRetries
+
+```ts
+maxRetries: number;
+```
+
+##### baseDelayMs
+
+```ts
+baseDelayMs: number;
+```
+
+##### maxAgentDelayMs?
+
+```ts
+optional maxAgentDelayMs?: number;
+```
+
+---
+
+### AttributeValue
+
+```ts
+type AttributeValue =
+  | string
+  | number
+  | boolean
+  | readonly string[]
+  | readonly number[]
+  | readonly boolean[];
+```
+
+Scalar or homogeneous-array telemetry attribute.
+
+---
+
+### SpanAttributes
+
+```ts
+type SpanAttributes = Record<string, AttributeValue | undefined>;
+```
+
+Named telemetry attributes, with undefined values omitted by the owner.
+
+---
+
+### SpanOptions
+
+```ts
+type SpanOptions = object;
+```
+
+Name and initial attributes of a request telemetry span.
+
+#### Properties
+
+##### name
+
+```ts
+name: string;
+```
+
+##### attributes?
+
+```ts
+optional attributes?: SpanAttributes;
+```
+
+---
+
+### SpanStatus
+
+```ts
+type SpanStatus =
+  | {
+      status: "ok";
+    }
+  | {
+      status: "error";
+      error?: {
+        name: string;
+        message: string;
+      };
+    };
+```
+
+Successful or failed telemetry completion.
+
+---
+
+### TelemetryContext
+
+```ts
+type TelemetryContext = object;
+```
+
+Parent context through which a provider opens telemetry spans.
+
+#### Methods
+
+##### startSpan()
+
+```ts
+startSpan<T>(options, callback): Promise<T>;
+```
+
+Run provider work under a child span.
+
+###### Type Parameters
+
+| Type Parameter |
+| -------------- |
+| `T`            |
+
+###### Parameters
+
+| Parameter  | Type                                |
+| ---------- | ----------------------------------- |
+| `options`  | [`SpanOptions`](#spanoptions)       |
+| `callback` | (`span`) => `T` \| `Promise`\<`T`\> |
+
+###### Returns
+
+`Promise`\<`T`\>
+
+---
+
+### TelemetrySpan
+
+```ts
+type TelemetrySpan = object & TelemetryContext;
+```
+
+Provider telemetry span with events, attributes and completion status.
+
+#### Type Declaration
+
+| Name              | Type                              | Description                                |
+| ----------------- | --------------------------------- | ------------------------------------------ |
+| `addEvent()`      | (`name`, `attributes?`) => `void` | Record a timestamped event on this span.   |
+| `setAttributes()` | (`attributes`) => `void`          | Add or replace attributes on this span.    |
+| `setStatus()`     | (`status`) => `void`              | Record the completion status of this span. |
 
 ## Variables
 
@@ -240,10 +1879,10 @@ Apply Pi's maintained context-overflow semantics to an exact Pi message.
 
 #### Parameters
 
-| Parameter        | Type               |
-| ---------------- | ------------------ |
-| `message`        | `AssistantMessage` |
-| `contextWindow?` | `number`           |
+| Parameter        | Type                                    |
+| ---------------- | --------------------------------------- |
+| `message`        | [`AssistantMessage`](#assistantmessage) |
+| `contextWindow?` | `number`                                |
 
 #### Returns
 
@@ -273,6 +1912,18 @@ Run Pi's model/tool loop inside Effect without changing Pi's values.
 
 ## References
 
+### decodeProviderData
+
+Re-exports [decodeProviderData](index.md#decodeproviderdata)
+
+---
+
+### streamModel
+
+Re-exports [streamModel](index.md#streammodel)
+
+---
+
 ### observeProviderStatus
 
 Re-exports [observeProviderStatus](index.md#observeproviderstatus)
@@ -288,6 +1939,12 @@ Re-exports [ProviderRejection](index.md#providerrejection)
 ### ProviderStatusRecorder
 
 Re-exports [ProviderStatusRecorder](index.md#providerstatusrecorder)
+
+---
+
+### normalizeModel
+
+Re-exports [normalizeModel](index.md#normalizemodel)
 
 ---
 

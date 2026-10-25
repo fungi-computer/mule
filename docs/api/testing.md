@@ -10,15 +10,241 @@
 
 ## Type Aliases
 
+### FauxModelDefinition
+
+```ts
+type FauxModelDefinition = object;
+```
+
+Credential-free model definition for the scripted provider.
+
+#### Properties
+
+##### id
+
+```ts
+id: string;
+```
+
+##### name?
+
+```ts
+optional name?: string;
+```
+
+##### reasoning?
+
+```ts
+optional reasoning?: boolean;
+```
+
+##### input?
+
+```ts
+optional input?: ("text" | "image")[];
+```
+
+##### inputLimits?
+
+```ts
+optional inputLimits?: Model<Api>["inputLimits"];
+```
+
+##### cost?
+
+```ts
+optional cost?: object;
+```
+
+###### input
+
+```ts
+input: number;
+```
+
+###### output
+
+```ts
+output: number;
+```
+
+###### cacheRead
+
+```ts
+cacheRead: number;
+```
+
+###### cacheWrite
+
+```ts
+cacheWrite: number;
+```
+
+##### contextWindow?
+
+```ts
+optional contextWindow?: number;
+```
+
+##### maxTokens?
+
+```ts
+optional maxTokens?: number;
+```
+
+---
+
+### RegisterFauxProviderOptions
+
+```ts
+type RegisterFauxProviderOptions = object;
+```
+
+Scripted provider configuration, independent of provider SDK declarations.
+
+#### Properties
+
+##### api?
+
+```ts
+optional api?: string;
+```
+
+##### provider?
+
+```ts
+optional provider?: string;
+```
+
+##### models?
+
+```ts
+optional models?: FauxModelDefinition[];
+```
+
+##### deferred?
+
+```ts
+optional deferred?: object;
+```
+
+###### pendingFetches?
+
+```ts
+optional pendingFetches?: number;
+```
+
+###### pollAfterMs?
+
+```ts
+optional pollAfterMs?: number;
+```
+
+##### tokensPerSecond?
+
+```ts
+optional tokensPerSecond?: number;
+```
+
+##### tokenSize?
+
+```ts
+optional tokenSize?: object;
+```
+
+###### min?
+
+```ts
+optional min?: number;
+```
+
+###### max?
+
+```ts
+optional max?: number;
+```
+
+---
+
+### FauxProviderState
+
+```ts
+type FauxProviderState = object;
+```
+
+Counters retained by the scripted provider.
+
+#### Properties
+
+##### callCount
+
+```ts
+callCount: number;
+```
+
+##### deferredFetchCount
+
+```ts
+deferredFetchCount: number;
+```
+
+##### cancelledDeferred
+
+```ts
+cancelledDeferred: NonNullable < AssistantMessage["deferred"] > [];
+```
+
+---
+
+### FauxResponseFactory
+
+```ts
+type FauxResponseFactory = (
+  context,
+  options,
+  state,
+  model,
+) => AssistantMessage | Promise<AssistantMessage>;
+```
+
+Function that observes a model request and supplies a scripted reply.
+
+#### Parameters
+
+| Parameter | Type                                                                       |
+| --------- | -------------------------------------------------------------------------- |
+| `context` | [`Context`](effect.md#context)                                             |
+| `options` | `Parameters`\<[`MuleStreamFunction`](index.md#mulestreamfunction)\>\[`2`\] |
+| `state`   | [`FauxProviderState`](#fauxproviderstate)                                  |
+| `model`   | [`Model`](effect.md#model-1)\<[`Api`](effect.md#api)\>                     |
+
+#### Returns
+
+\| [`AssistantMessage`](effect.md#assistantmessage) \|
+`Promise`\<[`AssistantMessage`](effect.md#assistantmessage)\>
+
+---
+
+### FauxResponseStep
+
+```ts
+type FauxResponseStep = AssistantMessage | FauxResponseFactory;
+```
+
+A scripted reply or a factory that observes the normalized request.
+
+---
+
 ### FauxModel
 
 ```ts
 type FauxModel = Readonly<{
   model: Model<Api>;
-  stream: FauxProviderHandle["provider"]["streamSimple"];
+  stream: (...args) => AssistantMessageEventStream;
   retryable: (message) => boolean;
   setResponses: (replies) => void;
-  state: FauxProviderHandle["state"];
+  state: FauxProviderState;
+  getPendingResponseCount: () => number;
 }>;
 ```
 
@@ -36,10 +262,10 @@ Create a credential-free model for tests and runnable examples.
 
 #### Parameters
 
-| Parameter | Type                          |
-| --------- | ----------------------------- |
-| `replies` | readonly `FauxResponseStep`[] |
-| `options` | `RegisterFauxProviderOptions` |
+| Parameter | Type                                                          |
+| --------- | ------------------------------------------------------------- |
+| `replies` | readonly [`FauxResponseStep`](#fauxresponsestep)[]            |
+| `options` | [`RegisterFauxProviderOptions`](#registerfauxprovideroptions) |
 
 #### Returns
 

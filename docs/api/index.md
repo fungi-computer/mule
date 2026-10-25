@@ -24,15 +24,16 @@ Pi's model stream function, supplied explicitly by the caller.
 
 #### Parameters
 
-| Parameter  | Type                  |
-| ---------- | --------------------- |
-| `model`    | `Model`\<`Api`\>      |
-| `context`  | `TranscriptContext`   |
-| `options?` | `SimpleStreamOptions` |
+| Parameter  | Type                                                   |
+| ---------- | ------------------------------------------------------ |
+| `model`    | [`Model`](effect.md#model-1)\<[`Api`](effect.md#api)\> |
+| `context`  | [`Context`](effect.md#context)                         |
+| `options?` | [`SimpleStreamOptions`](effect.md#simplestreamoptions) |
 
 #### Returns
 
-\| `AssistantMessageEventStream` \| `Promise`\<`AssistantMessageEventStream`\>
+\| [`AssistantMessageEventStream`](effect.md#assistantmessageeventstream) \|
+`Promise`\<[`AssistantMessageEventStream`](effect.md#assistantmessageeventstream)\>
 
 ---
 
@@ -128,7 +129,9 @@ Result produced by a tool before Mule forms Pi's correlated result message.
 ##### content
 
 ```ts
-readonly content: (TextContent | ImageContent)[];
+readonly content: (
+  | TextContent
+  | ImageContent)[];
 ```
 
 ##### data?
@@ -410,14 +413,14 @@ Lifecycle emitted around Pi values. Pi messages and events are not rewritten.
 }
 ```
 
-| Name      | Type                            | Description                                                     |
-| --------- | ------------------------------- | --------------------------------------------------------------- |
-| `type`    | `"message_end"`                 | -                                                               |
-| `run`     | [`MuleIdentity`](#muleidentity) | -                                                               |
-| `turn`    | [`MuleIdentity`](#muleidentity) | -                                                               |
-| `message` | [`MuleIdentity`](#muleidentity) | -                                                               |
-| `value`   | `Message`                       | -                                                               |
-| `data?`   | `JsonValue`                     | Application payload independent of the completed model message. |
+| Name      | Type                               | Description                                                     |
+| --------- | ---------------------------------- | --------------------------------------------------------------- |
+| `type`    | `"message_end"`                    | -                                                               |
+| `run`     | [`MuleIdentity`](#muleidentity)    | -                                                               |
+| `turn`    | [`MuleIdentity`](#muleidentity)    | -                                                               |
+| `message` | [`MuleIdentity`](#muleidentity)    | -                                                               |
+| `value`   | [`Message`](effect.md#message)     | -                                                               |
+| `data?`   | [`JsonValue`](effect.md#jsonvalue) | Application payload independent of the completed model message. |
 
 ---
 
@@ -559,12 +562,12 @@ Durable evidence for a call in an interrupted assistant turn.
 }
 ```
 
-| Name       | Type                                | Description                                            |
-| ---------- | ----------------------------------- | ------------------------------------------------------ |
-| `call`     | `ToolCall`                          | -                                                      |
-| `state`    | `"completed"`                       | -                                                      |
-| `result`   | [`MuleToolResult`](#muletoolresult) | -                                                      |
-| `message?` | `ToolResultMessage`                 | Present when the transcript message was committed too. |
+| Name       | Type                                               | Description                                            |
+| ---------- | -------------------------------------------------- | ------------------------------------------------------ |
+| `call`     | [`ToolCall`](effect.md#toolcall)                   | -                                                      |
+| `state`    | `"completed"`                                      | -                                                      |
+| `result`   | [`MuleToolResult`](#muletoolresult)                | -                                                      |
+| `message?` | [`ToolResultMessage`](effect.md#toolresultmessage) | Present when the transcript message was committed too. |
 
 ---
 
@@ -683,9 +686,9 @@ retry; unknown messages return false, never a decision from prose.
 
 ###### Parameters
 
-| Parameter | Type               |
-| --------- | ------------------ |
-| `message` | `AssistantMessage` |
+| Parameter | Type                                             |
+| --------- | ------------------------------------------------ |
+| `message` | [`AssistantMessage`](effect.md#assistantmessage) |
 
 ###### Returns
 
@@ -701,9 +704,9 @@ Provider's bounded Retry-After evidence for the last assistant error.
 
 ###### Parameters
 
-| Parameter | Type               |
-| --------- | ------------------ |
-| `message` | `AssistantMessage` |
+| Parameter | Type                                             |
+| --------- | ------------------------------------------------ |
+| `message` | [`AssistantMessage`](effect.md#assistantmessage) |
 
 ###### Returns
 
@@ -849,10 +852,10 @@ Decode and authorize one exact Pi tool call before it can execute.
 
 ###### Parameters
 
-| Parameter | Type          |
-| --------- | ------------- |
-| `call`    | `ToolCall`    |
-| `signal`  | `AbortSignal` |
+| Parameter | Type                             |
+| --------- | -------------------------------- |
+| `call`    | [`ToolCall`](effect.md#toolcall) |
+| `signal`  | `AbortSignal`                    |
 
 ###### Returns
 
@@ -870,13 +873,13 @@ Inputs for one complete Pi model/tool loop through the Promise facade.
 
 #### Type Declaration
 
-| Name                     | Type                                                           | Description                                                          |
-| ------------------------ | -------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `tools?`                 | readonly [`MuleTool`](#muletool)[]                             | -                                                                    |
-| `resolveApiKey()?`       | (`provider`, `signal`) => `Promise`\<`string` \| `undefined`\> | Resolve a fresh provider credential immediately before each Pi call. |
-| `getSteeringMessages()?` | (`signal`) => `Promise`\<readonly `Message`[]\>                | Pull messages that should steer the active run at Pi's safe point.   |
-| `getFollowUpMessages()?` | (`signal`) => `Promise`\<readonly `Message`[]\>                | Pull messages queued until the run would otherwise finish.           |
-| `shouldStopAfterTurn()?` | (`turn`, `signal`) => `Promise`\<`boolean`\>                   | Request a graceful stop after the current Pi turn has fully settled. |
+| Name                     | Type                                                                 | Description                                                          |
+| ------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `tools?`                 | readonly [`MuleTool`](#muletool)[]                                   | -                                                                    |
+| `resolveApiKey()?`       | (`provider`, `signal`) => `Promise`\<`string` \| `undefined`\>       | Resolve a fresh provider credential immediately before each Pi call. |
+| `getSteeringMessages()?` | (`signal`) => `Promise`\<readonly [`Message`](effect.md#message)[]\> | Pull messages that should steer the active run at Pi's safe point.   |
+| `getFollowUpMessages()?` | (`signal`) => `Promise`\<readonly [`Message`](effect.md#message)[]\> | Pull messages queued until the run would otherwise finish.           |
+| `shouldStopAfterTurn()?` | (`turn`, `signal`) => `Promise`\<`boolean`\>                         | Request a graceful stop after the current Pi turn has fully settled. |
 
 ---
 
@@ -959,7 +962,63 @@ const mule: Mule;
 
 Default Promise-facing Mule interface.
 
+---
+
+### streamModel
+
+```ts
+const streamModel: MuleStreamFunction;
+```
+
+Pi's maintained stream behind Mule's structural provider port.
+
 ## Functions
+
+### decodeProviderData()
+
+```ts
+function decodeProviderData(data): ProviderData;
+```
+
+Decode Pi's parsed request/event data before it enters an owned hook.
+
+#### Parameters
+
+| Parameter | Type      |
+| --------- | --------- |
+| `data`    | `unknown` |
+
+#### Returns
+
+[`ProviderData`](effect.md#providerdata)
+
+---
+
+### normalizeModel()
+
+```ts
+function normalizeModel<TApi>(model): Model<TApi>;
+```
+
+Validate a catalog model's opaque sampling fields before it enters Mule.
+
+#### Type Parameters
+
+| Type Parameter                          |
+| --------------------------------------- |
+| `TApi` _extends_ [`Api`](effect.md#api) |
+
+#### Parameters
+
+| Parameter | Type                                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------- |
+| `model`   | `Omit`\<[`Model`](effect.md#model-1)\<`TApi`\>, `"samplingParams"` \| `"samplingParamsByThinkingLevel"`\> |
+
+#### Returns
+
+[`Model`](effect.md#model-1)\<`TApi`\>
+
+---
 
 ### observeProviderStatus()
 
@@ -972,9 +1031,9 @@ decoding; this module retains no provider prose.
 
 #### Parameters
 
-| Parameter  | Type                                                                    |
-| ---------- | ----------------------------------------------------------------------- |
-| `options?` | `Pick`\<`SimpleStreamOptions`, `"onProviderStreamEvent"` \| `"fetch"`\> |
+| Parameter  | Type                                                                                                     |
+| ---------- | -------------------------------------------------------------------------------------------------------- |
+| `options?` | `Pick`\<[`SimpleStreamOptions`](effect.md#simplestreamoptions), `"onProviderStreamEvent"` \| `"fetch"`\> |
 
 #### Returns
 

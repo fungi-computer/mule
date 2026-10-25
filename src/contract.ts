@@ -3,7 +3,7 @@ import type {
   AssistantMessage,
   AssistantMessageEvent,
   AssistantMessageEventStream,
-  TranscriptContext,
+  Context,
   ImageContent,
   JsonValue,
   Message,
@@ -14,7 +14,7 @@ import type {
   ToolCall,
   ToolResultMessage,
   Usage,
-} from "@earendil-works/pi-ai";
+} from "./types.js";
 
 // Data shared by the Promise root and the `./effect` root. This module must not
 // import Effect: both declaration graphs reach it.
@@ -22,7 +22,7 @@ import type {
 /** Pi's model stream function, supplied explicitly by the caller. */
 export type MuleStreamFunction = (
   model: Model<Api>,
-  context: TranscriptContext,
+  context: Context,
   options?: SimpleStreamOptions,
 ) => AssistantMessageEventStream | Promise<AssistantMessageEventStream>;
 

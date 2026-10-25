@@ -1,5 +1,13 @@
 # @fungi.computer/mule
 
+## 0.1.1
+
+### Patch Changes
+
+- Changes since 0.1.0:
+
+  - fix(mule): own provider data types at the Pi boundary
+
 ## 0.1.0
 
 ### Minor Changes

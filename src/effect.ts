@@ -1,3 +1,6 @@
+import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
+export { decodeProviderData } from "./provider-data.js";
+export { streamPi as streamModel } from "./provider.js";
 import { nanoid } from "@fungi.computer/cairn";
 export {
   observeProviderStatus,
@@ -12,7 +15,8 @@ import {
   DEFAULT_MAX_AGENT_RETRY_DELAY_MS,
   retryDelayMs,
 } from "@earendil-works/pi-ai/utils/retry";
-import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
+import { streamPi } from "./provider.js";
+export { normalizeModel } from "./provider-model.js";
 import type {
   AssistantMessage,
   AssistantMessageEvent,
@@ -23,7 +27,7 @@ import type {
   Tool,
   ToolCall,
   ToolResultMessage,
-} from "@earendil-works/pi-ai";
+} from "./types.js";
 import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
 import * as Result from "effect/Result";
@@ -47,25 +51,7 @@ import type {
   MuleToolResult,
 } from "./contract.js";
 
-export type {
-  Api,
-  AssistantMessage,
-  AssistantMessageEvent,
-  Context,
-  ImageContent,
-  JsonValue,
-  Message,
-  Model,
-  RetryPolicy,
-  SimpleStreamOptions,
-  SystemMessage,
-  TextContent,
-  ThinkingContent,
-  ToolCall,
-  ToolResultMessage,
-  Usage,
-  UserMessage,
-} from "@earendil-works/pi-ai";
+export type * from "./types.js";
 export { Type } from "typebox";
 export type { MuleRetryObservation } from "./contract.js";
 
@@ -552,9 +538,7 @@ function streamTurn(
       const response = yield* withModelStreamDeadline(
         Effect.tryPromise({
           try: async () => {
-            const stream =
-              input.stream ??
-              (await import("@earendil-works/pi-ai/compat")).streamSimple;
+            const stream = input.stream ?? streamPi;
             return stream(input.model, normalizeContext(piContext), options);
           },
           catch: (cause) =>

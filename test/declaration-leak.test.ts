@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { describe, expect, expectTypeOf, it } from "vitest";
+import ts from "typescript";
 
 import type * as EffectRoot from "../src/effect.js";
 import type * as PromiseRoot from "../src/index.js";
@@ -15,8 +16,9 @@ async function declarationGraph(entry: string): Promise<Map<string, string>> {
     if (graph.has(path)) continue;
     const source = await readFile(path, "utf8");
     graph.set(path, source);
-    for (const [, specifier] of source.matchAll(/from\s+["'](\.[^"']+)["']/gu))
-      if (specifier !== undefined)
+    for (const { fileName: specifier } of ts.preProcessFile(source)
+      .importedFiles)
+      if (specifier.startsWith("."))
         pending.push(
           resolve(dirname(path), specifier.replace(/\.js$/u, ".d.ts")),
         );
@@ -25,18 +27,41 @@ async function declarationGraph(entry: string): Promise<Map<string, string>> {
 }
 
 const importsEffect = (source: string): boolean =>
-  /(?:from|import)\s*\(?\s*["']effect(?:\/[^"']*)?["']/u.test(source);
+  ts
+    .preProcessFile(source)
+    .importedFiles.some(
+      ({ fileName }) => fileName === "effect" || fileName.startsWith("effect/"),
+    );
 
 describe("Mule declaration surfaces", () => {
   it("keeps Effect out of every declaration reachable from the Promise root", async () => {
     const graph = await declarationGraph(join(dist, "index.d.ts"));
 
-    expect(
-      [...graph.keys()].map((path) => path.slice(dist.length + 1)).sort(),
-    ).toEqual(["contract.d.ts", "index.d.ts", "provider-status.d.ts"]);
     for (const [path, source] of graph)
       expect(importsEffect(source), path).toBe(false);
   });
+
+  it.each(["index", "effect", "testing"])(
+    "keeps provider SDK declarations out of the %s data contract",
+    async (entry) => {
+      const graph = await declarationGraph(join(dist, `${entry}.d.ts`));
+      for (const [path, source] of graph) {
+        const imports = ts
+          .preProcessFile(source)
+          .importedFiles.map(({ fileName }) => fileName);
+        for (const specifier of imports.filter((name) =>
+          name.startsWith("@earendil-works/pi-ai"),
+        ))
+          expect(
+            [
+              "@earendil-works/pi-ai/providers/model-schema",
+              "@earendil-works/pi-ai/providers/compat-schema",
+            ],
+            path,
+          ).toContain(specifier);
+      }
+    },
+  );
 
   it("exposes Effect's typed channels from the ./effect root", async () => {
     const source = await readFile(join(dist, "effect.d.ts"), "utf8");

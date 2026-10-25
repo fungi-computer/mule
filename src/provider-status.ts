@@ -1,4 +1,4 @@
-import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { SimpleStreamOptions } from "./types.js";
 import { Option, Schema } from "effect";
 
 const usageLimitCode = "subscription_sharing_usage_limit_exceeded";

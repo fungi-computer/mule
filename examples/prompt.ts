@@ -1,4 +1,4 @@
-import type { Model } from "@earendil-works/pi-ai";
+import type { Model } from "../src/types.js";
 import { pathToFileURL } from "node:url";
 
 import { mule } from "../src/index.js";

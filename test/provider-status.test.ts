@@ -3,6 +3,8 @@ import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-code
 import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 import { expect, it, vi } from "vitest";
 
+import { decodeProviderData } from "../src/provider-data.js";
+import { normalizeModel } from "../src/provider-model.js";
 import { observeProviderStatus } from "../src/provider-status.js";
 import { fauxModel } from "../src/testing.js";
 
@@ -269,7 +271,11 @@ it("observes Pi's maintained decoder before it normalizes an HTTP 200 failed res
       transport: "sse",
       maxRetries: 0,
       fetch: provider.fetch,
-      onProviderStreamEvent: provider.onProviderStreamEvent,
+      onProviderStreamEvent: (data, selected) =>
+        provider.onProviderStreamEvent(
+          decodeProviderData(data),
+          normalizeModel(selected),
+        ),
     },
   ).result();
   expect(message.stopReason).toBe("error");

@@ -1,4 +1,4 @@
-import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { SimpleStreamOptions } from "../src/types.js";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
