@@ -8,11 +8,7 @@ import * as Option from "effect/Option";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MuleEvent, MuleRetryObservation } from "../src/contract.js";
-import {
-  run,
-  piCodingAgentRetryDefaults,
-  piHttpIdleTimeoutMs,
-} from "../src/effect.js";
+import { run, piCodingAgentRetryDefaults } from "../src/effect.js";
 import { fauxRun } from "./support.js";
 
 // Advance the backing JavaScript timers for both active-stream cancellation
@@ -52,7 +48,6 @@ describe("Mule's typed retry policy", () => {
       baseDelayMs: 2_000,
       maxAgentDelayMs: 60_000,
     });
-    expect(piHttpIdleTimeoutMs).toBe(300_000);
   });
 
   it("calls produce once and returns the response unchanged when retry is undefined", async () => {

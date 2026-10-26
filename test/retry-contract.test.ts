@@ -1,7 +1,7 @@
 import { expect, expectTypeOf, it, vi } from "vitest";
 import * as Effect from "effect/Effect";
 
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage } from "../src/types.js";
 import type { MuleRunSettings } from "../src/contract.js";
 import { observeProviderStatus, mule } from "../src/index.js";
 import {

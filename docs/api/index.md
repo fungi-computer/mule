@@ -657,6 +657,18 @@ readonly optional modelStreamIdleTimeoutMs?: number;
 
 Maximum silence between provider stream events, in milliseconds.
 
+##### modelStreamLimits?
+
+```ts
+readonly optional modelStreamLimits?: Partial<{
+  firstEventMs: number;
+  attemptMs: number;
+  outputBytes: number;
+}>;
+```
+
+Trusted per-attempt safety limits may only tighten Mule's defaults.
+
 ##### toolExecution?
 
 ```ts
@@ -753,6 +765,14 @@ readonly message: AssistantMessage;
 ```ts
 readonly messages: readonly Message[];
 ```
+
+##### modelLimitReason?
+
+```ts
+readonly optional modelLimitReason?: string;
+```
+
+Mule-owned limit diagnostic, not untrusted provider prose.
 
 ---
 

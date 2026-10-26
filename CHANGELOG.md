@@ -1,5 +1,15 @@
 # @fungi.computer/mule
 
+## 0.2.0
+
+### Minor Changes
+
+- Changes since 0.1.1:
+
+  - fix: isolate provider prose to recorded failed turns
+  - refactor(mule)!: keep model stream limits internal
+  - fix: bound hung model attempts and retain failed partials
+
 ## 0.1.1
 
 ### Patch Changes

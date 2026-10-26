@@ -195,6 +195,14 @@ export type MuleRunSettings = {
     Omit<SimpleStreamOptions, "signal" | "maxRetries"> | undefined;
   /** Maximum silence between provider stream events, in milliseconds. */
   readonly modelStreamIdleTimeoutMs?: number | undefined;
+  /** Trusted per-attempt safety limits may only tighten Mule's defaults. */
+  readonly modelStreamLimits?:
+    | Partial<{
+        firstEventMs: number;
+        attemptMs: number;
+        outputBytes: number;
+      }>
+    | undefined;
   readonly toolExecution?: "parallel" | "sequential" | undefined;
   /**
    * Bounded retry around each assistant call, using Pi's exponential delay.
@@ -247,4 +255,6 @@ export type MuleRunOutcome = {
   readonly terminal: MuleIdentity;
   readonly message: AssistantMessage;
   readonly messages: readonly Message[];
+  /** Mule-owned limit diagnostic, not untrusted provider prose. */
+  readonly modelLimitReason?: string;
 };

@@ -229,6 +229,8 @@ export type AssistantMessage = {
   stopReason: StopReason;
   deferred?: DeferredHandle;
   errorMessage?: string;
+  /** Provider prose for the failed conversation turn, never a diagnostic. */
+  providerError?: string;
   rawStopReason?: string;
   endTurn?: boolean;
   timestamp: number;

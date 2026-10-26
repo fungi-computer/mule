@@ -63,7 +63,11 @@ describe("Mule live controls", () => {
           }, 2_000);
         }),
       ]);
-      expect(Exit.isFailure(exit)).toBe(true);
+      expect(Exit.isSuccess(exit)).toBe(true);
+      if (Exit.isSuccess(exit)) {
+        expect(exit.value.status).toBe("failed");
+        expect(exit.value.message.errorMessage).toMatch(/timed out/u);
+      }
       expect(runEnds(events)).toEqual([
         expect.objectContaining({ outcome: "failed" }),
       ]);
@@ -96,7 +100,14 @@ describe("Mule live controls", () => {
           }, 2_000);
         }),
       ]);
-      expect(Exit.isFailure(exit)).toBe(true);
+      expect(Exit.isSuccess(exit)).toBe(true);
+      if (Exit.isSuccess(exit)) {
+        expect(exit.value.status).toBe("failed");
+        expect(exit.value.message.content).toEqual([
+          { type: "text", text: "started" },
+        ]);
+        expect(exit.value.message.errorMessage).toMatch(/silence/u);
+      }
       expect(model.aborted()).toBe(true);
       expect(runEnds(events)).toEqual([
         expect.objectContaining({ outcome: "failed" }),

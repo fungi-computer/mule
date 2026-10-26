@@ -68,12 +68,13 @@ export const piCodingAgentRetryDefaults: RetryPolicy = {
   maxAgentDelayMs: 60_000,
 };
 
-/**
- * Pi coding-agent's default stream idle timeout (`DEFAULT_HTTP_IDLE_TIMEOUT_MS`,
- * `settings-manager.js`). A host that wants Pi's number for
- * `modelStreamIdleTimeoutMs` passes this explicitly.
- */
-export const piHttpIdleTimeoutMs = 300_000;
+/** Starting safety limits for one provider attempt; hosts may tighten them. Not public: the values are starting points, not a contract. */
+const modelStreamLimits = {
+  firstEventMs: 60_000,
+  idleMs: 120_000,
+  attemptMs: 600_000,
+  outputBytes: 2 * 1024 * 1024,
+} as const;
 
 /**
  * Grace period a release waits for a provider iterator that ignores abort,
@@ -81,6 +82,7 @@ export const piHttpIdleTimeoutMs = 300_000;
  * detail with no Pi equivalent, so it stays a constant, not host config.
  */
 const providerIteratorReleaseGraceMs = 1_000;
+const modelLimitCause = Symbol("Mule model limit");
 
 /** Apply Pi's maintained context-overflow semantics to an exact Pi message. */
 export function isContextOverflow(
@@ -447,6 +449,7 @@ function failTruncatedToolCalls(
 type StreamedTurn = {
   readonly identity: MuleIdentity;
   readonly message: AssistantMessage;
+  readonly limitReached?: boolean;
 };
 
 type StreamState = {
@@ -475,19 +478,13 @@ function pullPiEvent(
 
 function withModelStreamDeadline<A>(
   effect: Effect.Effect<A, MuleError>,
-  timeoutMs: number | undefined,
+  timeoutMs: number,
+  reason: () => string,
 ): Effect.Effect<A, MuleError> {
-  if (timeoutMs === undefined) return effect;
   return effect.pipe(
     Effect.timeoutOrElse({
       duration: timeoutMs,
-      orElse: () =>
-        Effect.fail(
-          failure(
-            "model",
-            `Model stream was idle for ${String(timeoutMs)} ms; the provider connection stopped responding. Retry the run.`,
-          ),
-        ),
+      orElse: () => Effect.fail(failure("model", reason(), modelLimitCause)),
     }),
   );
 }
@@ -501,8 +498,69 @@ function streamTurn(
   attempt: number,
 ): Effect.Effect<StreamedTurn, MuleError> {
   const messageIdentity = identity("message", turn);
+  let partial: AssistantMessage | undefined;
+  const streamState: StreamState = { started: false, terminal: undefined };
   return Effect.scoped(
     Effect.gen(function* () {
+      const limits = input.modelStreamLimits;
+      const firstEventMs = Math.min(
+        limits?.firstEventMs ?? modelStreamLimits.firstEventMs,
+        modelStreamLimits.firstEventMs,
+      );
+      const attemptMs = Math.min(
+        limits?.attemptMs ?? modelStreamLimits.attemptMs,
+        modelStreamLimits.attemptMs,
+      );
+      const outputLimit = Math.min(
+        limits?.outputBytes ?? modelStreamLimits.outputBytes,
+        modelStreamLimits.outputBytes,
+      );
+      if (
+        [
+          firstEventMs,
+          attemptMs,
+          outputLimit,
+          input.modelStreamIdleTimeoutMs ?? 1,
+        ].some((value) => !Number.isSafeInteger(value) || value <= 0)
+      )
+        return yield* Effect.fail(
+          failure(
+            "model",
+            "Model stream limits must be positive safe integers",
+          ),
+        );
+      const startedAt = Date.now();
+      let lastEventAt = startedAt;
+      let maxGapMs = 0;
+      let outputBytes = 0;
+      const encoder = new TextEncoder();
+      let hasEvent = false;
+      const limitError = (kind: string) =>
+        failure(
+          "model",
+          `Model ${kind} after ${String(Date.now() - startedAt)} ms (max provider gap ${String(Math.max(maxGapMs, Date.now() - lastEventAt))} ms, streamed ${String(outputBytes)} bytes)`,
+          modelLimitCause,
+        );
+      const deadline = <A>(effect: Effect.Effect<A, MuleError>) => {
+        const elapsed = Date.now() - startedAt;
+        const wholeRemaining = attemptMs - elapsed;
+        const gapLimit = Math.min(
+          hasEvent ? modelStreamLimits.idleMs : firstEventMs,
+          input.modelStreamIdleTimeoutMs ?? modelStreamLimits.idleMs,
+        );
+        const gapRemaining = gapLimit - (Date.now() - lastEventAt);
+        const kind =
+          wholeRemaining <= gapRemaining
+            ? "attempt timed out"
+            : hasEvent
+              ? "stream timed out (silence)"
+              : "first event timed out";
+        return withModelStreamDeadline(
+          effect,
+          Math.max(0, Math.min(wholeRemaining, gapRemaining)),
+          () => limitError(kind).message,
+        );
+      };
       const controller = new AbortController();
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
@@ -535,7 +593,7 @@ function streamTurn(
       const descriptors = (input.tools ?? []).map((tool) => tool.descriptor);
       if (descriptors.length > 0) piContext.tools = descriptors;
 
-      const response = yield* withModelStreamDeadline(
+      const response = yield* deadline(
         Effect.tryPromise({
           try: async () => {
             const stream = input.stream ?? streamPi;
@@ -544,13 +602,8 @@ function streamTurn(
           catch: (cause) =>
             failure("model", "Pi model stream could not start", cause),
         }),
-        input.modelStreamIdleTimeoutMs,
       );
 
-      const streamState: StreamState = {
-        started: false,
-        terminal: undefined,
-      };
       const iterator = yield* Effect.acquireRelease(
         Effect.sync(() => response[Symbol.asyncIterator]()),
         (active) =>
@@ -582,6 +635,20 @@ function streamTurn(
       const observeEvent = (
         event: AssistantMessageEvent,
       ): Effect.Effect<void, MuleError> => {
+        const now = Date.now();
+        maxGapMs = Math.max(maxGapMs, now - lastEventAt);
+        lastEventAt = now;
+        hasEvent = true;
+        if (
+          event.type === "text_delta" ||
+          event.type === "thinking_delta" ||
+          event.type === "toolcall_delta"
+        ) {
+          outputBytes += encoder.encode(event.delta).byteLength;
+          if (outputBytes > outputLimit)
+            return Effect.fail(limitError("output limit exceeded"));
+        }
+        if ("partial" in event) partial = event.partial;
         switch (event.type) {
           case "start": {
             context.push(event.partial);
@@ -624,11 +691,7 @@ function streamTurn(
           }
         }
       };
-      const pull = () =>
-        withModelStreamDeadline(
-          pullPiEvent(iterator, controller),
-          input.modelStreamIdleTimeoutMs,
-        );
+      const pull = () => deadline(pullPiEvent(iterator, controller));
       let next = yield* pull();
       while (!next.done) {
         yield* observeEvent(next.value);
@@ -637,13 +700,12 @@ function streamTurn(
 
       const completed =
         streamState.terminal ??
-        (yield* withModelStreamDeadline(
+        (yield* deadline(
           Effect.tryPromise({
             try: () => response.result(),
             catch: (cause) =>
               failure("model", "Pi model stream did not settle", cause),
           }),
-          input.modelStreamIdleTimeoutMs,
         ));
       if (streamState.started) context[context.length - 1] = completed;
       else {
@@ -664,7 +726,62 @@ function streamTurn(
         value: completed,
       });
       return { identity: messageIdentity, message: completed };
-    }),
+    }).pipe(
+      Effect.catch((error) => {
+        if (error.cause !== modelLimitCause) return Effect.fail(error);
+        const value: AssistantMessage = {
+          role: "assistant",
+          content: partial?.content ?? [],
+          api: input.model.api,
+          provider: input.model.provider,
+          model: input.model.id,
+          usage: partial?.usage ?? {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: 0,
+            },
+          },
+          stopReason: "error",
+          timestamp: Date.now(),
+          errorMessage:
+            input.retry?.enabled && attempt > input.retry.maxRetries
+              ? `The model failed ${String(attempt)} times on this conversation: ${error.message}`
+              : error.message,
+        };
+        return Effect.gen(function* () {
+          if (!streamState.started) {
+            context.push(value);
+            yield* emit({
+              type: "message_start",
+              run,
+              turn,
+              message: messageIdentity,
+              value,
+            });
+          } else context[context.length - 1] = value;
+          yield* emit({
+            type: "message_end",
+            run,
+            turn,
+            message: messageIdentity,
+            value,
+          });
+          return {
+            identity: messageIdentity,
+            message: value,
+            limitReached: true,
+          };
+        });
+      }),
+    ),
   );
 }
 
@@ -742,16 +859,17 @@ function streamTurnWithRetry(
           !policy.enabled ||
           retries >= policy.maxRetries
         ) {
-          if (retries > 0)
+          if (retries > 0) {
             yield* finish(
               message.stopReason !== "error" &&
                 message.stopReason !== "aborted",
               message.stopReason === "error" ? message.errorMessage : undefined,
             );
+          }
           return latest;
         }
         const retryable = yield* Effect.try({
-          try: () => input.retryable(message),
+          try: () => latest?.limitReached === true || input.retryable(message),
           catch: (cause) =>
             failure("model", "Typed model retry decision failed", cause),
         });
@@ -842,6 +960,7 @@ type CompletedLoopTurn = {
   readonly message: AssistantMessage;
   readonly toolResults: readonly ToolResultMessage[];
   readonly terminate: boolean;
+  readonly modelLimitReason?: string;
 };
 
 function completeLoopTurn(
@@ -888,11 +1007,14 @@ function completeLoopTurn(
       message: streamed.message,
       toolResults: batch.messages,
     });
-    return {
+    const completed: CompletedLoopTurn = {
       message: streamed.message,
       toolResults: batch.messages,
       terminate: batch.terminate,
     };
+    if (streamed.limitReached && streamed.message.errorMessage !== undefined)
+      return { ...completed, modelLimitReason: streamed.message.errorMessage };
+    return completed;
   });
 }
 
@@ -1037,10 +1159,19 @@ function finishRun(
   messages: readonly Message[],
   status: MuleRunOutcome["status"],
   emit: MuleListener,
+  modelLimitReason?: string,
 ): Effect.Effect<MuleRunOutcome, MuleError> {
   return Effect.gen(function* () {
     yield* emit({ type: "run_end", run, terminal, outcome: status });
-    return { status, run, terminal, message, messages };
+    const outcome: MuleRunOutcome = {
+      status,
+      run,
+      terminal,
+      message,
+      messages,
+    };
+    if (modelLimitReason !== undefined) return { ...outcome, modelLimitReason };
+    return outcome;
   });
 }
 
@@ -1158,6 +1289,7 @@ function runLoop(
           newMessages,
           status,
           emit,
+          completed.modelLimitReason,
         );
       }
       // Tool results always continue the run: this is where Pi checks its

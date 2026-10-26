@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/mule",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": "Levi <levi@technomancy.dev>",
   "description": "Effect-native Pi model and tool loop",
   "type": "module",

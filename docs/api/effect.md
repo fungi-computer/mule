@@ -1847,18 +1847,6 @@ that wants Pi coding-agent's numbers passes this explicitly.
 
 ---
 
-### piHttpIdleTimeoutMs
-
-```ts
-const piHttpIdleTimeoutMs: 300000 = 300_000;
-```
-
-Pi coding-agent's default stream idle timeout (`DEFAULT_HTTP_IDLE_TIMEOUT_MS`,
-`settings-manager.js`). A host that wants Pi's number for
-`modelStreamIdleTimeoutMs` passes this explicitly.
-
----
-
 ### muleEffect
 
 ```ts
