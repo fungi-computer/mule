@@ -3,6 +3,7 @@ export { decodeProviderData } from "./provider-data.js";
 export { streamPi as streamModel } from "./provider.js";
 import { nanoid } from "@fungi.computer/cairn";
 export {
+  isRetryableProviderRejection,
   observeProviderStatus,
   type ProviderRejection,
   type ProviderStatusRecorder,
@@ -884,7 +885,7 @@ function streamTurnWithRetry(
           catch: (cause) =>
             failure("model", "Model retry delay observation failed", cause),
         });
-        const delayMs = Math.max(
+        const minimumDelayMs = Math.max(
           retryDelayMs(policy, retries),
           after !== undefined &&
             Number.isSafeInteger(after) &&
@@ -893,6 +894,14 @@ function streamTurnWithRetry(
             ? after
             : 0,
         );
+        // Add rather than subtract jitter: a provider's Retry-After is a floor.
+        // Jitter stops at one minute; a longer explicit host policy stays intact.
+        const jitterMs = Math.min(
+          1_000,
+          minimumDelayMs / 4,
+          Math.max(0, 60_000 - minimumDelayMs),
+        );
+        const delayMs = minimumDelayMs + Math.floor(Math.random() * jitterMs);
         yield* reportRetry({
           type: "retry_scheduled",
           run,

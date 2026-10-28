@@ -1,5 +1,16 @@
 # @fungi.computer/mule
 
+## 0.2.1
+
+### Patch Changes
+
+- Changes since 0.2.0:
+
+  - fix(mule): share typed retry decisions across model consumers
+  - fix(mule): retain actual Anthropic stream overloads and API reset timing
+  - fix(mule): carry provider retry timing through the owned jittered schedule
+  - fix(mule): classify bounded provider limit and overload facts
+
 ## 0.2.0
 
 ### Minor Changes

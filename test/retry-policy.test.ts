@@ -123,9 +123,11 @@ describe("Mule's typed retry policy", () => {
   describe("with real timers advanced to Pi's backoff schedule", () => {
     beforeEach(() => {
       vi.useFakeTimers();
+      vi.spyOn(Math, "random").mockReturnValue(0);
     });
     afterEach(() => {
       vi.useRealTimers();
+      vi.restoreAllMocks();
     });
 
     it("retries 3 transient failures then succeeds: 4 calls, delays 2000/4000/8000 ms", async () => {
@@ -218,46 +220,55 @@ describe("Mule's typed retry policy", () => {
       });
     }, 20_000);
 
-    it("respects a capped gateway Retry-After within Pi's single retry schedule", async () => {
-      const { settings } = fauxRun([]);
-      let calls = 0;
-      let refused: ReturnType<typeof providerFailure> | undefined;
-      const stream: typeof settings.stream = () => {
-        calls++;
-        const result =
-          calls === 1
-            ? providerFailure("rate_limited: Supplier returned 429")
-            : fauxAssistantMessage("recovered");
-        if (calls === 1) refused = result;
-        const out = createAssistantMessageEventStream();
-        if (result.stopReason === "error")
-          out.push({ type: "error", reason: "error", error: result });
-        else out.push({ type: "done", reason: "stop", message: result });
-        out.end(result);
-        return out;
-      };
-      const { events, onRetry } = collectRetry();
-      const fiber = Effect.runFork(
-        run({
-          ...settings,
-          stream,
-          retry: policy,
-          onRetry,
-          retryAfterMs: (message) => (message === refused ? 5_000 : undefined),
-          retryable: (message) => message === refused,
-        }),
-      );
-      await vi.advanceTimersByTimeAsync(4_999);
-      expect(calls).toBe(1);
-      await vi.advanceTimersByTimeAsync(2_001);
-      const outcome = await Effect.runPromise(Fiber.join(fiber));
-      expect(outcome.status).toBe("completed");
-      expect(calls).toBe(2);
-      expect(events[0]).toMatchObject({
-        type: "retry_scheduled",
-        delayMs: 5_000,
-      });
-    });
+    it.each([
+      [5000, 5500, 2000],
+      [60000, 60000, 2000],
+      [5000, 100000, 100000],
+    ])(
+      "respects Retry-After %i with bounded additive jitter (%i ms) in the existing schedule",
+      async (after, expectedDelay, baseDelayMs) => {
+        vi.mocked(Math.random).mockReturnValue(0.5);
+        const { settings } = fauxRun([]);
+        let calls = 0;
+        let refused: ReturnType<typeof providerFailure> | undefined;
+        const stream: typeof settings.stream = () => {
+          calls++;
+          const result =
+            calls === 1
+              ? providerFailure("rate_limited: Supplier returned 429")
+              : fauxAssistantMessage("recovered");
+          if (calls === 1) refused = result;
+          const out = createAssistantMessageEventStream();
+          if (result.stopReason === "error")
+            out.push({ type: "error", reason: "error", error: result });
+          else out.push({ type: "done", reason: "stop", message: result });
+          out.end(result);
+          return out;
+        };
+        const { events, onRetry } = collectRetry();
+        const fiber = Effect.runFork(
+          run({
+            ...settings,
+            stream,
+            retry: { ...policy, baseDelayMs, maxAgentDelayMs: 100000 },
+            onRetry,
+            retryAfterMs: (message) =>
+              message === refused ? after : undefined,
+            retryable: (message) => message === refused,
+          }),
+        );
+        await vi.advanceTimersByTimeAsync(expectedDelay - 1);
+        expect(calls).toBe(1);
+        await vi.advanceTimersByTimeAsync(1);
+        const outcome = await Effect.runPromise(Fiber.join(fiber));
+        expect(outcome.status).toBe("completed");
+        expect(calls).toBe(2);
+        expect(events[0]).toMatchObject({
+          type: "retry_scheduled",
+          delayMs: expectedDelay,
+        });
+      },
+    );
 
     it("ends an abort during backoff cleanly, without a further call", async () => {
       const { settings, faux } = fauxRun([

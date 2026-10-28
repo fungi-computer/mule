@@ -1091,6 +1091,14 @@ optional deferred?: DeferredHandle;
 optional errorMessage?: string;
 ```
 
+##### providerError?
+
+```ts
+optional providerError?: string;
+```
+
+Provider prose for the failed conversation turn, never a diagnostic.
+
 ##### rawStopReason?
 
 ```ts
@@ -1909,6 +1917,12 @@ Re-exports [decodeProviderData](index.md#decodeproviderdata)
 ### streamModel
 
 Re-exports [streamModel](index.md#streammodel)
+
+---
+
+### isRetryableProviderRejection
+
+Re-exports [isRetryableProviderRejection](index.md#isretryableproviderrejection)
 
 ---
 

@@ -3,8 +3,13 @@ import * as Effect from "effect/Effect";
 
 import type { AssistantMessage } from "../src/types.js";
 import type { MuleRunSettings } from "../src/contract.js";
-import { observeProviderStatus, mule } from "../src/index.js";
 import {
+  isRetryableProviderRejection,
+  observeProviderStatus,
+  mule,
+} from "../src/index.js";
+import {
+  isRetryableProviderRejection as effectIsRetryableProviderRejection,
   observeProviderStatus as effectObserveProviderStatus,
   run,
 } from "../src/effect.js";
@@ -19,6 +24,7 @@ it("requires a boolean-returning decision on every Mule run", () => {
 
 it("shares the request-local provider observer on both roots", () => {
   expect(effectObserveProviderStatus).toBe(observeProviderStatus);
+  expect(effectIsRetryableProviderRejection).toBe(isRetryableProviderRejection);
   expect(observeProviderStatus().rejection()).toBeUndefined();
 });
 

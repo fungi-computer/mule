@@ -943,6 +943,15 @@ the run, or with the abort reason (an `AbortError` when the reason is not an
 type ProviderRejection =
   | Readonly<{
       code: "usage-limit-reached";
+      resetAt?: number;
+      limit?: "five_hour" | "seven_day" | "seven_day_opus" | "seven_day_sonnet";
+    }>
+  | Readonly<{
+      code: "rate-limit";
+      retryAfterMs?: number;
+    }>
+  | Readonly<{
+      code: "overloaded";
     }>
   | Readonly<{
       code: "provider_unavailable";
@@ -966,7 +975,7 @@ type ProviderStatusRecorder = Readonly<{
   onProviderStreamEvent: NonNullable<
     SimpleStreamOptions["onProviderStreamEvent"]
   >;
-  rejection: () => ProviderRejection | undefined;
+  rejection: (message?) => ProviderRejection | undefined;
 }>;
 ```
 
@@ -1037,6 +1046,26 @@ Validate a catalog model's opaque sampling fields before it enters Mule.
 #### Returns
 
 [`Model`](effect.md#model-1)\<`TApi`\>
+
+---
+
+### isRetryableProviderRejection()
+
+```ts
+function isRetryableProviderRejection(rejection): boolean;
+```
+
+Retry only typed transient failures, never usage exhaustion or rejection.
+
+#### Parameters
+
+| Parameter   | Type                                                     |
+| ----------- | -------------------------------------------------------- |
+| `rejection` | [`ProviderRejection`](#providerrejection) \| `undefined` |
+
+#### Returns
+
+`boolean`
 
 ---
 

@@ -3,6 +3,7 @@ export { streamPi as streamModel } from "./provider.js";
 export { normalizeModel } from "./provider-model.js";
 import type { Message, Tool, ToolCall } from "./types.js";
 export {
+  isRetryableProviderRejection,
   observeProviderStatus,
   type ProviderRejection,
   type ProviderStatusRecorder,
