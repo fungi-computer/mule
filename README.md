@@ -12,10 +12,10 @@ npm install @fungi.computer/mule
 ```
 
 The package ships ESM only and depends on `effect` and Pi
-(`@earendil-works/pi-ai`) at runtime, plus `@fungi.computer/cairn` for IDs. Mule
-does not require or install the MCP SDK. Consumers that type-check dependency
-declarations (`skipLibCheck: false`) must install Pi’s Google GenAI optional
-declaration dependency themselves:
+(`@earendil-works/pi-ai`) at runtime, plus TypeBox and `@fungi.computer/cairn`
+for IDs. Mule does not require or install the MCP SDK. Consumers that type-check
+dependency declarations (`skipLibCheck: false`) must install Pi’s Google GenAI
+optional declaration dependency themselves:
 
 ```sh
 npm install --save-dev @modelcontextprotocol/sdk
