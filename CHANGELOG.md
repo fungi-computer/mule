@@ -1,5 +1,14 @@
 # @fungi.computer/mule
 
+## 0.2.2
+
+### Patch Changes
+
+- Changes since 0.2.1:
+
+  - fix(mule): respect explicit status before server error fallback
+  - fix(mule): classify observed provider failures for retry
+
 ## 0.2.1
 
 ### Patch Changes

@@ -1,5 +1,6 @@
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
@@ -13,6 +14,255 @@ import {
 } from "../src/provider-status.js";
 import { fauxModel } from "../src/testing.js";
 import { streamPi } from "../src/provider.js";
+import type { SimpleStreamOptions } from "../src/types.js";
+
+async function openAIRequest(
+  transport: typeof globalThis.fetch,
+  subscription = false,
+  options?: Pick<SimpleStreamOptions, "signal" | "onProviderStreamEvent">,
+) {
+  const [selected] = (
+    subscription ? openaiCodexProvider() : openaiProvider()
+  ).getModels();
+  if (selected === undefined) throw new Error("Pi must supply an OpenAI model");
+  const provider = observeProviderStatus({ ...options, fetch: transport });
+  const payload = Buffer.from(
+    JSON.stringify({
+      "https://api.openai.com/auth": { chatgpt_account_id: "test-account" },
+    }),
+  ).toString("base64");
+  const stream = await streamPi(
+    normalizeModel(selected),
+    { messages: [] },
+    {
+      ...options,
+      apiKey: subscription ? `e30.${payload}.test` : "sk-fixture-key",
+      transport: "sse",
+      maxRetries: 0,
+      fetch: provider.fetch,
+      onProviderStreamEvent: provider.onProviderStreamEvent,
+    },
+  );
+  const message = await stream.result();
+  return { provider, message };
+}
+
+it.each([false, true])(
+  "retries OpenAI response.failed server_error through Pi (subscription=%s)",
+  async (subscription) => {
+    // Documented Responses error code; Pi delivers the parsed envelope before
+    // reducing it to prose in both processResponsesStream and mapCodexEvents.
+    const failed = {
+      type: "response.failed",
+      sequence_number: 1,
+      response: {
+        id: "response_server_error",
+        status: "failed",
+        error: { code: "server_error", message: "ignored" },
+      },
+    };
+    const { provider, message } = await openAIRequest(
+      () =>
+        Promise.resolve(
+          new Response(`data: ${JSON.stringify(failed)}\n\n`, {
+            headers: { "content-type": "text/event-stream" },
+          }),
+        ),
+      subscription,
+    );
+    expect(message.stopReason).toBe("error");
+    expect(provider.rejection(message)).toEqual({
+      code: "provider_unavailable",
+    });
+    expect(isRetryableProviderRejection(provider.rejection(message))).toBe(
+      true,
+    );
+  },
+);
+
+it("does not retry a parsed HTTP 400 error with code server_error", async () => {
+  const event = {
+    type: "error",
+    status: 400,
+    error: { code: "server_error", message: "ignored" },
+  };
+  const { provider, message } = await openAIRequest(
+    () =>
+      Promise.resolve(
+        new Response(`data: ${JSON.stringify(event)}\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      ),
+    true,
+  );
+  expect(message.stopReason).toBe("error");
+  expect(provider.rejection(message)).toBeUndefined();
+  expect(isRetryableProviderRejection(provider.rejection(message))).toBe(false);
+});
+
+it.each([502, 503, 504, 507])(
+  "retains a ChatGPT parsed error event's HTTP %i status before Pi discards it",
+  async (status) => {
+    // OpenAI WebSocket mode errors carry status alongside a nested API error.
+    // Codex uses the same mapCodexEvents hook for SSE and WebSocket events.
+    const event = {
+      type: "error",
+      status,
+      error: { type: "server_error", code: "server_error", message: "ignored" },
+    };
+    const { provider, message } = await openAIRequest(
+      () =>
+        Promise.resolve(
+          new Response(`data: ${JSON.stringify(event)}\n\n`, {
+            headers: { "content-type": "text/event-stream" },
+          }),
+        ),
+      true,
+    );
+    expect(message.stopReason).toBe("error");
+    expect(provider.rejection(message)).toEqual({
+      code: "provider_unavailable",
+      status,
+    });
+    expect(isRetryableProviderRejection(provider.rejection(message))).toBe(
+      true,
+    );
+  },
+);
+
+it.each([502, 503, 504, 507])(
+  "retains already-retryable HTTP %i evidence through Pi's subscription transport",
+  async (status) => {
+    const { provider, message } = await openAIRequest(
+      () => Promise.resolve(new Response("ignored", { status })),
+      true,
+    );
+    expect(message.stopReason).toBe("error");
+    expect(provider.rejection(message)).toEqual({
+      code: "provider_unavailable",
+      status,
+    });
+  },
+);
+
+it.each(["subscription_sharing_usage_limit_exceeded", "insufficient_quota"])(
+  "does not turn an explicit %s failed event into a truncated-stream retry",
+  async (code) => {
+    const failed = {
+      type: "response.failed",
+      sequence_number: 1,
+      response: {
+        id: "response_refused",
+        status: "failed",
+        error: { code, message: "Our servers are currently overloaded" },
+      },
+    };
+    const { provider, message } = await openAIRequest(() =>
+      Promise.resolve(
+        new Response(`data: ${JSON.stringify(failed)}\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      ),
+    );
+    expect(message.stopReason).toBe("error");
+    expect(isRetryableProviderRejection(provider.rejection(message))).toBe(
+      false,
+    );
+  },
+);
+
+it("does not turn a completed OpenAI stream into a retry", async () => {
+  const completed = {
+    type: "response.completed",
+    sequence_number: 1,
+    response: { id: "response_completed", status: "completed", output: [] },
+  };
+  const { provider, message } = await openAIRequest(() =>
+    Promise.resolve(
+      new Response(`data: ${JSON.stringify(completed)}\n\n`, {
+        headers: { "content-type": "text/event-stream" },
+      }),
+    ),
+  );
+  expect(message.stopReason).toBe("stop");
+  expect(provider.rejection(message)).toBeUndefined();
+});
+
+it("does not classify a host event observer's failure as a truncated stream", async () => {
+  const created = {
+    type: "response.created",
+    sequence_number: 0,
+    response: { id: "response_observer_failed", status: "in_progress" },
+  };
+  const { provider, message } = await openAIRequest(
+    () =>
+      Promise.resolve(
+        new Response(`data: ${JSON.stringify(created)}\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      ),
+    false,
+    { onProviderStreamEvent: () => Promise.reject(new Error("host failed")) },
+  );
+  expect(message.stopReason).toBe("error");
+  expect(provider.rejection(message)).toBeUndefined();
+});
+
+it("does not retry an explicit API error that OpenAI's SDK throws before Pi's event hook", async () => {
+  const events = [
+    {
+      type: "response.created",
+      sequence_number: 0,
+      response: { id: "response_sdk_error", status: "in_progress" },
+    },
+    {
+      type: "error",
+      code: "invalid_request_error",
+      error: {
+        type: "invalid_request_error",
+        code: "invalid_request_error",
+        message: "Our servers are currently overloaded",
+      },
+    },
+  ];
+  const onProviderStreamEvent = vi.fn();
+  const { provider, message } = await openAIRequest(
+    () =>
+      Promise.resolve(
+        new Response(
+          events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+      ),
+    false,
+    { onProviderStreamEvent },
+  );
+  expect(message.stopReason).toBe("error");
+  expect(onProviderStreamEvent).toHaveBeenCalledTimes(1);
+  expect(provider.rejection(message)).toBeUndefined();
+});
+
+it("does not retry a cancelled body read after HTTP 200", async () => {
+  const abort = new AbortController();
+  const { provider, message } = await openAIRequest(
+    () =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              abort.abort();
+              controller.error(abort.signal.reason);
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+      ),
+    false,
+    { signal: abort.signal },
+  );
+  expect(message.stopReason).toBe("aborted");
+  expect(provider.rejection(message)).toBeUndefined();
+});
 
 it("owns the retry decision for every typed provider rejection", () => {
   expect(isRetryableProviderRejection(undefined)).toBe(false);
@@ -428,8 +678,10 @@ it("keeps an HTTP 429 insufficient_quota refusal terminal despite transient pros
   });
 });
 
-it("records transport failure without replacing the thrown cause", async () => {
-  const cause = new TypeError("transport failed");
+it("records a Node fetch socket reset without replacing the thrown cause", async () => {
+  const cause = Object.assign(new TypeError("fetch failed"), {
+    cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+  });
   const provider = observeProviderStatus({
     fetch: () => Promise.reject(cause),
   });

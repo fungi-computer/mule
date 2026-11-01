@@ -17,6 +17,19 @@ const decodeFailedEvent = Schema.decodeUnknownOption(
 const decodeErrorReply = Schema.decodeUnknownOption(
   Schema.fromJsonString(providerError),
 );
+const decodeErrorEvent = Schema.decodeUnknownOption(
+  Schema.Struct({
+    type: Schema.Literal("error"),
+    status: Schema.optional(
+      Schema.Number.check(
+        Schema.isInt(),
+        Schema.isBetween({ minimum: 100, maximum: 599 }),
+      ),
+    ),
+    code: Schema.optional(Schema.String),
+    error: Schema.optional(providerError.fields.error),
+  }),
+);
 const decodeBodyChunk = Schema.decodeUnknownSync(Schema.instanceOf(Uint8Array));
 const errorBodyBytes = 16 * 1024;
 const decodeSeconds = Schema.decodeUnknownOption(
@@ -40,6 +53,7 @@ const decodeRejected = Schema.decodeUnknownOption(Schema.Literal("rejected"));
 const decodeExhausted = Schema.decodeUnknownOption(Schema.Literal("0"));
 const decodeDate = Schema.decodeUnknownOption(Schema.DateTimeUtcFromString);
 const decodeOverloaded = Schema.decodeUnknownOption(
+  // https://docs.anthropic.com/en/api/errors#http-errors
   Schema.Struct({
     type: Schema.Literal("error"),
     error: Schema.Struct({ type: Schema.Literal("overloaded_error") }),
@@ -232,6 +246,26 @@ export function observeProviderStatus(
         failed.value.response.error.code === usageLimitCode
       )
         rejection = { code: "usage-limit-reached" };
+      // OpenAI's Responses error code, not an inference from overload prose:
+      // https://platform.openai.com/docs/api-reference/responses/object#responses/object-error
+      if (
+        Option.isSome(failed) &&
+        failed.value.response.error.code === "server_error"
+      )
+        rejection = { code: "provider_unavailable" };
+      // WebSocket API errors retain HTTP status in the parsed event:
+      // https://developers.openai.com/api/docs/guides/websocket-mode/#handling-errors
+      const error = decodeErrorEvent(data);
+      if (Option.isSome(error)) {
+        const status = error.value.status;
+        if (status !== undefined && status >= 500)
+          rejection = { code: "provider_unavailable", status };
+        else if (
+          status === undefined &&
+          (error.value.code ?? error.value.error?.code) === "server_error"
+        )
+          rejection = { code: "provider_unavailable" };
+      }
       if (Option.isSome(decodeOverloaded(data)))
         rejection = { code: "overloaded" };
       await options?.onProviderStreamEvent?.(data, model);
