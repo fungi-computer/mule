@@ -21,6 +21,7 @@ type MuleRetryObservation =
       attempt: number;
       maxAttempts: number;
       delayMs: number;
+      dueAt: number;
       errorMessage: string;
     }
   | {
@@ -152,6 +153,7 @@ fiber; the run then ends with a `cancelled` `run_end`.
 
 | Name                     | Type                                                                                                              | Description                                                                                                                                                                                                             |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `onUndrained?`           | `Effect.Effect`\<`void`\>                                                                                         | Notify the owner when provider cleanup was detached or failed; abort alone is not drain evidence.                                                                                                                       |
 | `prepareSystemPrompt()?` | () => `Effect.Effect`\<`string`, [`MuleError`](index.md#muleerror)\>                                              | Rebuild the model system prompt immediately before each provider request.                                                                                                                                               |
 | `tools?`                 | readonly [`MuleTool`](#muletool)[]                                                                                | -                                                                                                                                                                                                                       |
 | `resolveApiKey()?`       | (`provider`) => `Effect.Effect`\<`string` \| `undefined`, [`MuleError`](index.md#muleerror)\>                     | Resolve a fresh provider credential immediately before each Pi call.                                                                                                                                                    |
@@ -1849,7 +1851,7 @@ const piCodingAgentRetryDefaults: RetryPolicy;
 ```
 
 Pi coding-agent's retry defaults (`settings-manager.js` `getRetrySettings()`,
-`@earendil-works/pi-ai` 0.99.0, the version pinned in the lockfile). Pi-ai's own
+`@earendil-works/pi-ai` 1.3.0, the version pinned in the lockfile). Pi-ai's own
 `RetryPolicy` has no default — an undefined policy means no retry — so a host
 that wants Pi coding-agent's numbers passes this explicitly.
 

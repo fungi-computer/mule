@@ -112,6 +112,10 @@ export type MuleEvent =
       readonly turn: MuleIdentity;
       readonly message: MuleIdentity;
       readonly value: Message;
+      /** Commit the assistant and its retry decision together before observing retry. */
+      readonly retry?:
+        | Exclude<MuleRetryObservation, { type: "retry_attempt_started" }>
+        | undefined;
       /** Application payload independent of the completed model message. */
       readonly data?: JsonValue | undefined;
     }
@@ -174,11 +178,25 @@ export type MuleToolCheckpoint =
       readonly message?: ToolResultMessage | undefined;
     };
 
-/** Completed assistant turn recovered by the transcript owner, before its next model call. */
-export type MuleResume = {
-  readonly message: AssistantMessage;
-  readonly tools: readonly MuleToolCheckpoint[];
-};
+/** Transcript-owned continuation at a completed assistant or model retry boundary. */
+export type MuleResume =
+  | Readonly<{
+      kind: "assistant";
+      message: AssistantMessage;
+      tools: readonly MuleToolCheckpoint[];
+    }>
+  | (Readonly<{
+      kind: "retry";
+      /** Number of the retry waiting or already dispatched; zero is the initial request. */
+      attempt: number;
+      /** The previously recorded retry ceiling, when a retry has been scheduled. */
+      maxAttempts?: number;
+      message?: AssistantMessage;
+    }> &
+      (
+        | Readonly<{ phase: "waiting"; dueAt: number }>
+        | Readonly<{ phase: "dispatched" }>
+      ));
 
 /** Run inputs that are identical on the Promise and Effect roots. */
 export type MuleRunSettings = {
@@ -231,6 +249,7 @@ export type MuleRetryObservation =
       readonly attempt: number;
       readonly maxAttempts: number;
       readonly delayMs: number;
+      readonly dueAt: number;
       readonly errorMessage: string;
     }
   | {

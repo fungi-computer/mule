@@ -47,6 +47,7 @@ import type {
   MuleRetryObservation,
   MuleRunOutcome,
   MuleRunSettings,
+  MuleStreamFunction,
   MuleToolExecutionPart,
   MuleToolRejection,
   MuleToolResult,
@@ -58,7 +59,7 @@ export type { MuleRetryObservation } from "./contract.js";
 
 /**
  * Pi coding-agent's retry defaults (`settings-manager.js` `getRetrySettings()`,
- * `@earendil-works/pi-ai` 0.99.0, the version pinned in the lockfile). Pi-ai's
+ * `@earendil-works/pi-ai` 1.3.0, the version pinned in the lockfile). Pi-ai's
  * own `RetryPolicy` has no default — an undefined policy means no retry — so
  * a host that wants Pi coding-agent's numbers passes this explicitly.
  */
@@ -135,6 +136,8 @@ export type MuleListener = (event: MuleEvent) => Effect.Effect<void, MuleError>;
  * fiber; the run then ends with a `cancelled` `run_end`.
  */
 export type MuleRunInput = MuleRunSettings & {
+  /** Notify the owner when provider cleanup was detached or failed; abort alone is not drain evidence. */
+  readonly onUndrained?: Effect.Effect<void> | undefined;
   /** Rebuild the model system prompt immediately before each provider request. */
   readonly prepareSystemPrompt?:
     (() => Effect.Effect<string, MuleError>) | undefined;
@@ -448,7 +451,6 @@ function failTruncatedToolCalls(
 }
 
 type StreamedTurn = {
-  readonly identity: MuleIdentity;
   readonly message: AssistantMessage;
   readonly limitReached?: boolean;
 };
@@ -490,6 +492,12 @@ function withModelStreamDeadline<A>(
   );
 }
 
+/** The one provider producer and its consumer owned by a model attempt. */
+type ProviderStreamCustody = {
+  response?: Promise<Awaited<ReturnType<MuleStreamFunction>>>;
+  iterator?: AsyncIterator<AssistantMessageEvent>;
+};
+
 function streamTurn(
   input: MuleRunInput,
   context: Message[],
@@ -497,7 +505,10 @@ function streamTurn(
   turn: MuleIdentity,
   emit: MuleListener,
   attempt: number,
-): Effect.Effect<StreamedTurn, MuleError> {
+): Effect.Effect<
+  StreamedTurn & { readonly identity: MuleIdentity },
+  MuleError
+> {
   const messageIdentity = identity("message", turn);
   let partial: AssistantMessage | undefined;
   const streamState: StreamState = { started: false, terminal: undefined };
@@ -563,10 +574,46 @@ function streamTurn(
         );
       };
       const controller = new AbortController();
+      const provider: ProviderStreamCustody = {};
       yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          controller.abort("Mule model scope closed");
-        }),
+        Effect.tryPromise({
+          try: () => {
+            controller.abort("Mule model scope closed");
+            if (provider.response === undefined) return Promise.resolve(true);
+            // Iterator.return only closes the consumer. Pi's result is the
+            // producer's terminal, including an abort-aware provider's error.
+            const cleanup = provider.response.then(
+              async (response) => {
+                await Promise.all([
+                  provider.iterator?.return?.(),
+                  response.result(),
+                ]);
+              },
+              () => undefined,
+            );
+            return new Promise<boolean>((resolve) => {
+              const timer = setTimeout(() => {
+                resolve(false);
+              }, providerIteratorReleaseGraceMs);
+              cleanup.then(
+                () => {
+                  clearTimeout(timer);
+                  resolve(true);
+                },
+                () => {
+                  clearTimeout(timer);
+                  resolve(false);
+                },
+              );
+            });
+          },
+          catch: (cause) => failure("model", "Pi model stream failed", cause),
+        }).pipe(
+          Effect.orElseSucceed(() => false),
+          Effect.flatMap((released) =>
+            released ? Effect.void : (input.onUndrained ?? Effect.void),
+          ),
+        ),
       );
 
       const resolvedApiKey =
@@ -596,43 +643,19 @@ function streamTurn(
 
       const response = yield* deadline(
         Effect.tryPromise({
-          try: async () => {
+          try: () => {
             const stream = input.stream ?? streamPi;
-            return stream(input.model, normalizeContext(piContext), options);
+            provider.response = Promise.resolve(
+              stream(input.model, normalizeContext(piContext), options),
+            );
+            return provider.response;
           },
           catch: (cause) =>
             failure("model", "Pi model stream could not start", cause),
         }),
       );
-
-      const iterator = yield* Effect.acquireRelease(
-        Effect.sync(() => response[Symbol.asyncIterator]()),
-        (active) =>
-          Effect.tryPromise({
-            try: () => {
-              controller.abort("Mule model stream closed");
-              // Provider iterators can ignore abort while a read is pending.
-              // Releasing a timed-out run must not await that iterator forever.
-              return new Promise<void>((resolve) => {
-                const timer = setTimeout(
-                  resolve,
-                  providerIteratorReleaseGraceMs,
-                );
-                Promise.resolve(active.return?.()).then(
-                  () => {
-                    clearTimeout(timer);
-                    resolve();
-                  },
-                  () => {
-                    clearTimeout(timer);
-                    resolve();
-                  },
-                );
-              });
-            },
-            catch: (cause) => failure("model", "Pi model stream failed", cause),
-          }).pipe(Effect.ignore),
-      );
+      const iterator = response[Symbol.asyncIterator]();
+      provider.iterator = iterator;
       const observeEvent = (
         event: AssistantMessageEvent,
       ): Effect.Effect<void, MuleError> => {
@@ -719,14 +742,7 @@ function streamTurn(
           value: completed,
         });
       }
-      yield* emit({
-        type: "message_end",
-        run,
-        turn,
-        message: messageIdentity,
-        value: completed,
-      });
-      return { identity: messageIdentity, message: completed };
+      return { message: completed, identity: messageIdentity };
     }).pipe(
       Effect.catch((error) => {
         if (error.cause !== modelLimitCause) return Effect.fail(error);
@@ -768,13 +784,6 @@ function streamTurn(
               value,
             });
           } else context[context.length - 1] = value;
-          yield* emit({
-            type: "message_end",
-            run,
-            turn,
-            message: messageIdentity,
-            value,
-          });
           return {
             identity: messageIdentity,
             message: value,
@@ -801,6 +810,7 @@ function streamTurnWithRetry(
   run: MuleIdentity,
   turn: MuleIdentity,
   emit: MuleListener,
+  resume?: Extract<MuleResume, { kind: "retry" }>,
 ): Effect.Effect<StreamedTurn, MuleError> {
   return Effect.gen(function* () {
     // One turn owns one finite budget, even if its caller updates future policy.
@@ -820,10 +830,17 @@ function streamTurnWithRetry(
         ),
       );
     let latest: StreamedTurn | undefined;
-    let calls = 0;
-    let retries = 0;
+    const maxRetries = Math.min(
+      policy?.maxRetries ?? 0,
+      resume?.maxAttempts ?? Infinity,
+    );
+    let calls =
+      resume === undefined
+        ? 0
+        : resume.attempt + (resume.phase === "dispatched" ? 1 : 0);
+    let retries = resume?.attempt ?? 0;
     let finished = false;
-    let lastError: string | undefined;
+    let lastError = resume?.message?.errorMessage;
 
     const reportRetry = (
       event: MuleRetryObservation,
@@ -846,45 +863,24 @@ function streamTurnWithRetry(
         );
       });
 
-    return yield* Effect.gen(function* () {
-      for (;;) {
-        if (latest !== undefined) {
-          const index = context.indexOf(latest.message);
-          if (index !== -1) context.splice(index, 1);
-        }
-        latest = yield* streamTurn(input, context, run, turn, emit, ++calls);
-        const message = latest.message;
-        if (
-          message.stopReason !== "error" ||
-          policy === undefined ||
-          !policy.enabled ||
-          retries >= policy.maxRetries
-        ) {
-          if (retries > 0) {
-            yield* finish(
-              message.stopReason !== "error" &&
-                message.stopReason !== "aborted",
-              message.stopReason === "error" ? message.errorMessage : undefined,
-            );
-          }
-          return latest;
-        }
-        const retryable = yield* Effect.try({
-          try: () => latest?.limitReached === true || input.retryable(message),
-          catch: (cause) =>
-            failure("model", "Typed model retry decision failed", cause),
+    const waitForRetry = (dueAt: number) =>
+      Effect.gen(function* () {
+        yield* Effect.sleep(Math.max(0, dueAt - Date.now()));
+        yield* reportRetry({
+          type: "retry_attempt_started",
+          run,
+          turn,
+          attempt: retries,
         });
-        if (!retryable) {
-          if (retries > 0) yield* finish(false, message.errorMessage);
-          return latest;
-        }
+      });
+    const prepareRetry = (errorMessage: string, after?: number) =>
+      Effect.gen(function* () {
+        if (policy === undefined)
+          return yield* Effect.fail(
+            failure("model", "Retry policy is unavailable"),
+          );
         retries++;
-        lastError = message.errorMessage ?? "Unknown error";
-        const after = yield* Effect.try({
-          try: () => input.retryAfterMs?.(message),
-          catch: (cause) =>
-            failure("model", "Model retry delay observation failed", cause),
-        });
+        lastError = errorMessage;
         const minimumDelayMs = Math.max(
           retryDelayMs(policy, retries),
           after !== undefined &&
@@ -902,22 +898,133 @@ function streamTurnWithRetry(
           Math.max(0, 60_000 - minimumDelayMs),
         );
         const delayMs = minimumDelayMs + Math.floor(Math.random() * jitterMs);
-        yield* reportRetry({
-          type: "retry_scheduled",
+        const dueAt = Date.now() + delayMs;
+        return {
+          type: "retry_scheduled" as const,
           run,
           turn,
           attempt: retries,
-          maxAttempts: policy.maxRetries,
+          maxAttempts: maxRetries,
           delayMs,
+          dueAt,
           errorMessage: lastError,
-        });
-        yield* Effect.sleep(delayMs);
-        yield* reportRetry({
-          type: "retry_attempt_started",
+        };
+      });
+
+    return yield* Effect.gen(function* () {
+      if (resume !== undefined) {
+        if (
+          !Number.isSafeInteger(resume.attempt) ||
+          resume.attempt < 0 ||
+          (resume.maxAttempts !== undefined &&
+            (!Number.isSafeInteger(resume.maxAttempts) ||
+              resume.maxAttempts < 0)) ||
+          (resume.phase === "waiting" &&
+            (!Number.isSafeInteger(resume.dueAt) || resume.dueAt < 0))
+        )
+          return yield* Effect.fail(
+            failure("model", "Invalid model retry continuation"),
+          );
+        if (
+          !policy?.enabled ||
+          retries > maxRetries ||
+          (resume.phase === "dispatched" && retries >= maxRetries)
+        ) {
+          yield* finish(false, "Model retry budget exhausted after restart");
+          return resume.message === undefined
+            ? yield* Effect.fail(
+                failure("model", "Model retry budget exhausted after restart"),
+              )
+            : { message: resume.message };
+        }
+        if (resume.phase === "waiting") yield* waitForRetry(resume.dueAt);
+        else {
+          // A restart is not provider backpressure: charge the attempt, resend now.
+          const retry = {
+            ...(yield* prepareRetry("Model request interrupted by a restart")),
+            delayMs: 0,
+            dueAt: Date.now(),
+          };
+          yield* reportRetry(retry);
+          yield* waitForRetry(retry.dueAt);
+        }
+      }
+      for (;;) {
+        if (latest !== undefined) {
+          const index = context.indexOf(latest.message);
+          if (index !== -1) context.splice(index, 1);
+        }
+        const streamed = yield* streamTurn(
+          input,
+          context,
           run,
           turn,
-          attempt: retries,
+          emit,
+          ++calls,
+        );
+        latest = streamed;
+        const message = streamed.message;
+        let retry:
+          | Exclude<MuleRetryObservation, { type: "retry_attempt_started" }>
+          | undefined;
+        if (
+          message.stopReason === "error" &&
+          policy?.enabled &&
+          retries < maxRetries
+        ) {
+          const retryable = yield* Effect.try({
+            try: () =>
+              streamed.limitReached === true || input.retryable(message),
+            catch: (cause) =>
+              failure("model", "Typed model retry decision failed", cause),
+          });
+          if (retryable) {
+            const after = yield* Effect.try({
+              try: () => input.retryAfterMs?.(message),
+              catch: (cause) =>
+                failure("model", "Model retry delay observation failed", cause),
+            });
+            retry = yield* prepareRetry(
+              message.errorMessage ?? "Unknown error",
+              after,
+            );
+          }
+        }
+        if (
+          retry === undefined &&
+          (message.stopReason === "error" || retries > 0)
+        ) {
+          const terminal: Extract<
+            MuleRetryObservation,
+            { type: "retry_finished" }
+          > = {
+            type: "retry_finished",
+            run,
+            turn,
+            attempt: retries,
+            success:
+              message.stopReason !== "error" &&
+              message.stopReason !== "aborted",
+          };
+          retry =
+            message.stopReason === "error" && message.errorMessage !== undefined
+              ? { ...terminal, finalError: message.errorMessage }
+              : terminal;
+        }
+        // The recorder receives one decision boundary. No await can expose a
+        // completed error without the retry deadline (or terminal decision).
+        yield* emit({
+          type: "message_end",
+          run,
+          turn,
+          message: streamed.identity,
+          value: message,
+          retry,
         });
+        if (retry?.type === "retry_finished") finished = true;
+        if (retry !== undefined && retries > 0) yield* reportRetry(retry);
+        if (retry?.type !== "retry_scheduled") return latest;
+        yield* waitForRetry(retry.dueAt);
       }
     }).pipe(
       Effect.onInterrupt(() =>
@@ -980,6 +1087,7 @@ function completeLoopTurn(
   turn: MuleIdentity,
   pending: readonly Message[],
   emit: MuleListener,
+  retryResume?: Extract<MuleResume, { kind: "retry" }>,
 ): Effect.Effect<CompletedLoopTurn, MuleError> {
   return Effect.gen(function* () {
     yield* emit({ type: "turn_start", run, turn });
@@ -990,6 +1098,7 @@ function completeLoopTurn(
       run,
       turn,
       emit,
+      retryResume,
     );
     // Pi keeps partially streamed tool calls on an aborted or errored message.
     // Like Pi's loop, the turn ends there: nothing executes and no tool result
@@ -1030,7 +1139,7 @@ function completeLoopTurn(
 /** Resolve only missing results. A stored and current safe policy are both required. */
 function resumeTurn(
   input: MuleRunInput,
-  resume: MuleResume,
+  resume: Extract<MuleResume, { kind: "assistant" }>,
   context: Message[],
   newMessages: Message[],
   run: MuleIdentity,
@@ -1252,7 +1361,8 @@ function runLoop(
     let continueLoop: boolean;
 
     yield* emit({ type: "run_start", run: runIdentity });
-    if (input.resume !== undefined) {
+    let retryResume = input.resume?.kind === "retry" ? input.resume : undefined;
+    if (input.resume?.kind === "assistant") {
       const resumed = yield* resumeTurn(
         input,
         input.resume,
@@ -1287,7 +1397,9 @@ function runLoop(
         identity("turn", runIdentity),
         pending,
         emit,
+        retryResume,
       );
+      retryResume = undefined;
       finalMessage = completed.message;
       const status = statusFor(completed.message);
       if (status !== "completed") {

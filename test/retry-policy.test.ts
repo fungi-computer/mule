@@ -384,3 +384,118 @@ describe("Mule's typed retry policy", () => {
     expect(faux.state.callCount).toBe(1);
   });
 });
+
+describe("durable retry continuation", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    vi.spyOn(Math, "random").mockReturnValue(0);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("waits only until the persisted due time and retains the spent retry budget", async () => {
+    const { settings, faux } = fauxRun([
+      providerFailure("503 still unavailable"),
+    ]);
+    const { events, onRetry } = collectRetry();
+    const fiber = Effect.runFork(
+      run({
+        ...settings,
+        retry: policy,
+        retryable: () => true,
+        onRetry,
+        resume: {
+          kind: "retry",
+          phase: "waiting",
+          attempt: 3,
+          maxAttempts: 3,
+          dueAt: 10_500,
+          message: providerFailure("503 prior attempt"),
+        },
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(499);
+    expect(faux.state.callCount).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    const outcome = await Effect.runPromise(Fiber.join(fiber));
+    expect(outcome.status).toBe("failed");
+    expect(faux.state.callCount).toBe(1);
+    expect(events).toEqual([
+      expect.objectContaining({ type: "retry_attempt_started", attempt: 3 }),
+      expect.objectContaining({
+        type: "retry_finished",
+        attempt: 3,
+        success: false,
+      }),
+    ]);
+  });
+
+  it("does not redispatch an interrupted last retry", async () => {
+    const { settings, faux } = fauxRun([
+      fauxAssistantMessage("must not dispatch"),
+    ]);
+    const { events, onRetry } = collectRetry();
+    const outcome = await Effect.runPromise(
+      run({
+        ...settings,
+        retry: policy,
+        retryable: () => true,
+        onRetry,
+        resume: {
+          kind: "retry",
+          phase: "dispatched",
+          attempt: 3,
+          maxAttempts: 3,
+          message: providerFailure("503 prior attempt"),
+        },
+      }),
+    );
+    expect(outcome.status).toBe("failed");
+    expect(faux.state.callCount).toBe(0);
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "retry_finished",
+        attempt: 3,
+        success: false,
+      }),
+    ]);
+  });
+});
+
+it("joins each failed assistant to its retry or terminal decision before retry observation", async () => {
+  const { settings } = fauxRun([
+    providerFailure("retry"),
+    providerFailure("exhausted"),
+  ]);
+  const completed: Extract<MuleEvent, { type: "message_end" }>[] = [];
+  const observations: MuleRetryObservation[] = [];
+  await Effect.runPromise(
+    run(
+      {
+        ...settings,
+        retry: { enabled: true, maxRetries: 1, baseDelayMs: 0 },
+        retryable: () => true,
+        onRetry: (event) =>
+          Effect.sync(() => {
+            if (event.type !== "retry_attempt_started") {
+              expect(completed.at(-1)?.retry).toEqual(event);
+              observations.push(event);
+            }
+          }),
+      },
+      (event) =>
+        Effect.sync(() => {
+          if (event.type === "message_end" && event.value.role === "assistant")
+            completed.push(event);
+        }),
+    ),
+  );
+  expect(observations.map(({ type }) => type)).toEqual([
+    "retry_scheduled",
+    "retry_finished",
+  ]);
+  expect(completed.map(({ retry }) => retry?.attempt)).toEqual([1, 1]);
+});

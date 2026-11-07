@@ -281,6 +281,12 @@ type MuleEvent =
       turn: MuleIdentity;
       message: MuleIdentity;
       value: Message;
+      retry?: Exclude<
+        MuleRetryObservation,
+        {
+          type: "retry_attempt_started";
+        }
+      >;
       data?: JsonValue;
     }
   | {
@@ -409,18 +415,22 @@ Lifecycle emitted around Pi values. Pi messages and events are not rewritten.
   turn: MuleIdentity;
   message: MuleIdentity;
   value: Message;
+  retry?: Exclude<MuleRetryObservation, {
+     type: "retry_attempt_started";
+  }>;
   data?: JsonValue;
 }
 ```
 
-| Name      | Type                               | Description                                                     |
-| --------- | ---------------------------------- | --------------------------------------------------------------- |
-| `type`    | `"message_end"`                    | -                                                               |
-| `run`     | [`MuleIdentity`](#muleidentity)    | -                                                               |
-| `turn`    | [`MuleIdentity`](#muleidentity)    | -                                                               |
-| `message` | [`MuleIdentity`](#muleidentity)    | -                                                               |
-| `value`   | [`Message`](effect.md#message)     | -                                                               |
-| `data?`   | [`JsonValue`](effect.md#jsonvalue) | Application payload independent of the completed model message. |
+| Name      | Type                                                                                                            | Description                                                                  |
+| --------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `type`    | `"message_end"`                                                                                                 | -                                                                            |
+| `run`     | [`MuleIdentity`](#muleidentity)                                                                                 | -                                                                            |
+| `turn`    | [`MuleIdentity`](#muleidentity)                                                                                 | -                                                                            |
+| `message` | [`MuleIdentity`](#muleidentity)                                                                                 | -                                                                            |
+| `value`   | [`Message`](effect.md#message)                                                                                  | -                                                                            |
+| `retry?`  | `Exclude`\<[`MuleRetryObservation`](effect.md#muleretryobservation), \{ `type`: `"retry_attempt_started"`; \}\> | Commit the assistant and its retry decision together before observing retry. |
+| `data?`   | [`JsonValue`](effect.md#jsonvalue)                                                                              | Application payload independent of the completed model message.              |
 
 ---
 
@@ -574,25 +584,28 @@ Durable evidence for a call in an interrupted assistant turn.
 ### MuleResume
 
 ```ts
-type MuleResume = object;
+type MuleResume =
+  | Readonly<{
+  kind: "assistant";
+  message: AssistantMessage;
+  tools: readonly MuleToolCheckpoint[];
+}>
+  | Readonly<{
+  kind: "retry";
+  attempt: number;
+  maxAttempts?: number;
+  message?: AssistantMessage;
+}> &
+  | Readonly<{
+  phase: "waiting";
+  dueAt: number;
+}>
+  | Readonly<{
+  phase: "dispatched";
+}>;
 ```
 
-Completed assistant turn recovered by the transcript owner, before its next
-model call.
-
-#### Properties
-
-##### message
-
-```ts
-readonly message: AssistantMessage;
-```
-
-##### tools
-
-```ts
-readonly tools: readonly MuleToolCheckpoint[];
-```
+Transcript-owned continuation at a completed assistant or model retry boundary.
 
 ---
 

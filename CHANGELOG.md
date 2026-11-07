@@ -1,5 +1,14 @@
 # @fungi.computer/mule
 
+## 0.2.3
+
+### Patch Changes
+
+- Changes since 0.2.2:
+
+  - fix(mule): resend a restart-interrupted request without provider backoff
+  - fix(durability): preserve retry decisions and drain ownership across restart
+
 ## 0.2.2
 
 ### Patch Changes
