@@ -1,6 +1,6 @@
 import { fauxModel } from "../src/testing.js";
+import { Type } from "typebox";
 import {
-  Type,
   type Context,
   type Message,
   type ToolResultMessage,

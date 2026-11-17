@@ -1101,6 +1101,14 @@ optional providerError?: string;
 
 Provider prose for the failed conversation turn, never a diagnostic.
 
+##### modelFailure?
+
+```ts
+optional modelFailure?: ModelFailure;
+```
+
+Typed failure facts retained independently of display text and provider prose.
+
 ##### rawStopReason?
 
 ```ts
@@ -1851,7 +1859,7 @@ const piCodingAgentRetryDefaults: RetryPolicy;
 ```
 
 Pi coding-agent's retry defaults (`settings-manager.js` `getRetrySettings()`,
-`@earendil-works/pi-ai` 1.3.0, the version pinned in the lockfile). Pi-ai's own
+`@earendil-works/pi-ai` 1.5.2, the version pinned in the lockfile). Pi-ai's own
 `RetryPolicy` has no default — an undefined policy means no retry — so a host
 that wants Pi coding-agent's numbers passes this explicitly.
 
@@ -1864,6 +1872,16 @@ const muleEffect: MuleEffect;
 ```
 
 Canonical Effect-native Mule value.
+
+---
+
+### ModelFailureSchema
+
+```ts
+const ModelFailureSchema: Schema.Codec<ModelFailure>;
+```
+
+Storage codec for plain model-failure data; exposed only by Mule's Effect door.
 
 ## Functions
 
@@ -1934,12 +1952,6 @@ Re-exports [observeProviderStatus](index.md#observeproviderstatus)
 
 ---
 
-### ProviderRejection
-
-Re-exports [ProviderRejection](index.md#providerrejection)
-
----
-
 ### ProviderStatusRecorder
 
 Re-exports [ProviderStatusRecorder](index.md#providerstatusrecorder)
@@ -1949,6 +1961,24 @@ Re-exports [ProviderStatusRecorder](index.md#providerstatusrecorder)
 ### normalizeModel
 
 Re-exports [normalizeModel](index.md#normalizemodel)
+
+---
+
+### providerDisplayNames
+
+Re-exports [providerDisplayNames](index.md#providerdisplaynames)
+
+---
+
+### ModelFailure
+
+Re-exports [ModelFailure](index.md#modelfailure)
+
+---
+
+### ProviderRejection
+
+Re-exports [ProviderRejection](index.md#providerrejection)
 
 ---
 

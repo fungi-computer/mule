@@ -1,11 +1,9 @@
-import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 export { decodeProviderData } from "./provider-data.js";
 export { streamPi as streamModel } from "./provider.js";
 import { nanoid } from "@fungi.computer/cairn";
 export {
   isRetryableProviderRejection,
   observeProviderStatus,
-  type ProviderRejection,
   type ProviderStatusRecorder,
 } from "./provider-status.js";
 // Pi's root entry also evaluates its TypeBox validator compiler and model
@@ -16,8 +14,10 @@ import {
   DEFAULT_MAX_AGENT_RETRY_DELAY_MS,
   retryDelayMs,
 } from "@earendil-works/pi-ai/utils/retry";
-import { streamPi } from "./provider.js";
-export { normalizeModel } from "./provider-model.js";
+import { prepareProviderContext, streamPi } from "./provider.js";
+export { normalizeModel, providerDisplayNames } from "./provider-model.js";
+export type { ModelFailure, ProviderRejection } from "./model-failure.js";
+export { ModelFailureSchema } from "./model-failure-schema.js";
 import type {
   AssistantMessage,
   AssistantMessageEvent,
@@ -59,7 +59,7 @@ export type { MuleRetryObservation } from "./contract.js";
 
 /**
  * Pi coding-agent's retry defaults (`settings-manager.js` `getRetrySettings()`,
- * `@earendil-works/pi-ai` 1.3.0, the version pinned in the lockfile). Pi-ai's
+ * `@earendil-works/pi-ai` 1.5.2, the version pinned in the lockfile). Pi-ai's
  * own `RetryPolicy` has no default — an undefined policy means no retry — so
  * a host that wants Pi coding-agent's numbers passes this explicitly.
  */
@@ -85,6 +85,7 @@ const modelStreamLimits = {
  */
 const providerIteratorReleaseGraceMs = 1_000;
 const modelLimitCause = Symbol("Mule model limit");
+const modelAttemptLimitCause = Symbol("Mule model attempt limit");
 
 /** Apply Pi's maintained context-overflow semantics to an exact Pi message. */
 export function isContextOverflow(
@@ -453,6 +454,7 @@ function failTruncatedToolCalls(
 type StreamedTurn = {
   readonly message: AssistantMessage;
   readonly limitReached?: boolean;
+  readonly attemptTimedOut?: boolean;
 };
 
 type StreamState = {
@@ -482,12 +484,12 @@ function pullPiEvent(
 function withModelStreamDeadline<A>(
   effect: Effect.Effect<A, MuleError>,
   timeoutMs: number,
-  reason: () => string,
+  reason: () => MuleError,
 ): Effect.Effect<A, MuleError> {
   return effect.pipe(
     Effect.timeoutOrElse({
       duration: timeoutMs,
-      orElse: () => Effect.fail(failure("model", reason(), modelLimitCause)),
+      orElse: () => Effect.fail(reason()),
     }),
   );
 }
@@ -550,8 +552,10 @@ function streamTurn(
       const limitError = (kind: string) =>
         failure(
           "model",
-          `Model ${kind} after ${String(Date.now() - startedAt)} ms (max provider gap ${String(Math.max(maxGapMs, Date.now() - lastEventAt))} ms, streamed ${String(outputBytes)} bytes)`,
-          modelLimitCause,
+          `Model ${kind} after ${String(Date.now() - startedAt)} ms (max provider gap ${String(Math.max(maxGapMs, Date.now() - lastEventAt))} ms, streamed ${String(outputBytes)} bytes)${kind === "attempt timed out" ? ". Write big content with file tools instead of one giant response." : ""}`,
+          kind === "attempt timed out"
+            ? modelAttemptLimitCause
+            : modelLimitCause,
         );
       const deadline = <A>(effect: Effect.Effect<A, MuleError>) => {
         const elapsed = Date.now() - startedAt;
@@ -570,7 +574,7 @@ function streamTurn(
         return withModelStreamDeadline(
           effect,
           Math.max(0, Math.min(wholeRemaining, gapRemaining)),
-          () => limitError(kind).message,
+          () => limitError(kind),
         );
       };
       const controller = new AbortController();
@@ -646,7 +650,7 @@ function streamTurn(
           try: () => {
             const stream = input.stream ?? streamPi;
             provider.response = Promise.resolve(
-              stream(input.model, normalizeContext(piContext), options),
+              stream(input.model, prepareProviderContext(piContext), options),
             );
             return provider.response;
           },
@@ -745,7 +749,11 @@ function streamTurn(
       return { message: completed, identity: messageIdentity };
     }).pipe(
       Effect.catch((error) => {
-        if (error.cause !== modelLimitCause) return Effect.fail(error);
+        if (
+          error.cause !== modelLimitCause &&
+          error.cause !== modelAttemptLimitCause
+        )
+          return Effect.fail(error);
         const value: AssistantMessage = {
           role: "assistant",
           content: partial?.content ?? [],
@@ -788,6 +796,7 @@ function streamTurn(
             identity: messageIdentity,
             message: value,
             limitReached: true,
+            attemptTimedOut: error.cause === modelAttemptLimitCause,
           };
         });
       }),
@@ -839,6 +848,7 @@ function streamTurnWithRetry(
         ? 0
         : resume.attempt + (resume.phase === "dispatched" ? 1 : 0);
     let retries = resume?.attempt ?? 0;
+    let wholeAttemptTimeouts = 0;
     let finished = false;
     let lastError = resume?.message?.errorMessage;
 
@@ -964,13 +974,18 @@ function streamTurnWithRetry(
         );
         latest = streamed;
         const message = streamed.message;
+        const repeatedAttemptTimeout =
+          streamed.attemptTimedOut === true && wholeAttemptTimeouts > 0;
+        if (streamed.attemptTimedOut) wholeAttemptTimeouts++;
         let retry:
           | Exclude<MuleRetryObservation, { type: "retry_attempt_started" }>
           | undefined;
         if (
           message.stopReason === "error" &&
           policy?.enabled &&
-          retries < maxRetries
+          retries < maxRetries &&
+          // Resume ordinals and other failures are not whole-attempt timeouts.
+          !repeatedAttemptTimeout
         ) {
           const retryable = yield* Effect.try({
             try: () =>

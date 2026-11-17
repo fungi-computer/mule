@@ -100,6 +100,123 @@ it("does not retry a parsed HTTP 400 error with code server_error", async () => 
   expect(isRetryableProviderRejection(provider.rejection(message))).toBe(false);
 });
 
+// The dogfood failure: ChatGPT's usage-limit refusal arrives as a parsed
+// `error` event (WebSocket mode and Codex SSE share mapCodexEvents), with the
+// documented code at the top level or nested. Pi keeps only its prose.
+const chatGptLimitText =
+  "The ChatGPT user has reached their Subscription Sharing usage limit. Ask the user to try again after their usage limit resets or use an API key instead.";
+
+type ErrorEvent = Readonly<{
+  type: string;
+  status?: number;
+  code?: string;
+  message?: string;
+  error?: Readonly<{ type?: string; code: string; message: string }>;
+  response?: Readonly<{
+    id: string;
+    status: string;
+    error: Readonly<{ code: string; message: string }>;
+  }>;
+}>;
+
+function errorEventStream(event: ErrorEvent) {
+  return () =>
+    Promise.resolve(
+      new Response(`data: ${JSON.stringify(event)}\n\n`, {
+        headers: { "content-type": "text/event-stream" },
+      }),
+    );
+}
+
+it.each([
+  [
+    "nested code with HTTP status",
+    {
+      type: "error",
+      status: 429,
+      error: {
+        type: "usage_limit_exceeded",
+        code: "subscription_sharing_usage_limit_exceeded",
+        message: chatGptLimitText,
+      },
+    },
+  ],
+  [
+    "top-level code",
+    {
+      type: "error",
+      code: "subscription_sharing_usage_limit_exceeded",
+      message: chatGptLimitText,
+    },
+  ],
+  [
+    "nested code without status",
+    {
+      type: "error",
+      error: {
+        code: "subscription_sharing_usage_limit_exceeded",
+        message: chatGptLimitText,
+      },
+    },
+  ],
+])(
+  "classifies a ChatGPT usage-limit error event as usage-limit-reached through Pi (%s)",
+  async (_name, event) => {
+    const { provider, message } = await openAIRequest(
+      errorEventStream(event),
+      true,
+    );
+    expect(message.stopReason).toBe("error");
+    expect(provider.rejection(message)).toEqual({
+      code: "usage-limit-reached",
+    });
+    expect(isRetryableProviderRejection(provider.rejection(message))).toBe(
+      false,
+    );
+  },
+);
+
+it.each(["insufficient_quota", "usage_limit_reached"])(
+  "types a %s parsed error event and failed response as a quota limit",
+  async (code) => {
+    const error = await openAIRequest(
+      errorEventStream({
+        type: "error",
+        status: 429,
+        error: { code, message: chatGptLimitText },
+      }),
+      true,
+    );
+    expect(error.provider.rejection(error.message)).toEqual({
+      code: "usage-limit-reached",
+      cause: "quota",
+    });
+    const failed = await openAIRequest(
+      errorEventStream({
+        type: "response.failed",
+        response: { id: "r", status: "failed", error: { code, message: "x" } },
+      }),
+    );
+    expect(failed.provider.rejection(failed.message)).toEqual({
+      code: "usage-limit-reached",
+      cause: "quota",
+    });
+  },
+);
+
+it("does not classify a usage limit from error-event prose without the documented code", async () => {
+  const { provider, message } = await openAIRequest(
+    errorEventStream({
+      type: "error",
+      status: 400,
+      error: { code: "other", message: chatGptLimitText },
+    }),
+    true,
+  );
+  expect(message.stopReason).toBe("error");
+  expect(provider.rejection(message)).toBeUndefined();
+});
+
 it.each([502, 503, 504, 507])(
   "retains a ChatGPT parsed error event's HTTP %i status before Pi discards it",
   async (status) => {
@@ -661,22 +778,26 @@ it("preserves the documented OpenAI structured HTTP 429 subscription refusal and
   expect(await response.json()).toEqual(body);
 });
 
-it("keeps an HTTP 429 insufficient_quota refusal terminal despite transient prose", async () => {
-  const provider = observeProviderStatus({
-    fetch: () =>
-      Promise.resolve(
-        Response.json(
-          { error: { code: "insufficient_quota", message: "503 retry me" } },
-          { status: 429 },
+it.each(["insufficient_quota", "usage_limit_reached"])(
+  "types an HTTP 429 %s refusal as a terminal quota limit despite transient prose",
+  async (code) => {
+    const provider = observeProviderStatus({
+      fetch: () =>
+        Promise.resolve(
+          Response.json(
+            { error: { code, message: "503 retry me" } },
+            { status: 429 },
+          ),
         ),
-      ),
-  });
-  await provider.fetch("https://provider.invalid/responses");
-  expect(provider.rejection()).toEqual({
-    code: "provider_rejected",
-    status: 429,
-  });
-});
+    });
+    await provider.fetch("https://provider.invalid/responses");
+    expect(provider.rejection()).toEqual({
+      code: "usage-limit-reached",
+      cause: "quota",
+    });
+    expect(isRetryableProviderRejection(provider.rejection())).toBe(false);
+  },
+);
 
 it("records a Node fetch socket reset without replacing the thrown cause", async () => {
   const cause = Object.assign(new TypeError("fetch failed"), {

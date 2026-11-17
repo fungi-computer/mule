@@ -1,5 +1,22 @@
 # @fungi.computer/mule
 
+## 0.2.4
+
+### Patch Changes
+
+- Changes since 0.2.3:
+
+  - fix(mule): keep Promise failure declarations framework-free
+  - fix(mule): count only observed whole-attempt timeouts
+  - fix(mule): repair history before host provider overrides
+  - fix(mule): repair interrupted history and bound repeated attempt timeouts
+  - fix: isolate pre-train fixtures and correct Hub phone targets
+  - fix(agents): explain typed quota limits without retry advice
+  - fix(mule): classify a ChatGPT usage limit that arrives as a parsed error
+    event
+  - fix(watchdog): roll back a commit SQLite refuses as busy
+  - fix: follow Pi 1.5 where it changed
+
 ## 0.2.3
 
 ### Patch Changes

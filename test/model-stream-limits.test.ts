@@ -9,7 +9,7 @@ import { fauxRun, userMessage } from "./support.js";
 type Mode = "never" | "silent" | "trickle" | "output";
 
 it.each<Mode>(["never", "silent", "trickle", "output"])(
-  "bounds a %s provider, preserves partials, retries three times and permits the next prompt",
+  "bounds a %s provider, preserves partials and permits the next prompt",
   async (mode) => {
     const { settings } = fauxRun([]);
     const emitted: MuleEvent[] = [];
@@ -78,14 +78,27 @@ it.each<Mode>(["never", "silent", "trickle", "output"])(
       ),
     );
     expect(Date.now() - started).toBeLessThan(2_000);
-    expect(calls).toBe(4);
+    const expectedCalls = mode === "trickle" ? 2 : 4;
+    expect(calls).toBe(expectedCalls);
     expect(failed.status).toBe("failed");
     expect(failed.message.content).toEqual(
       mode === "never" ? [] : partialContent,
     );
-    expect(failed.message.errorMessage).toMatch(
-      /failed 4 times on this conversation/u,
-    );
+    if (mode === "trickle") {
+      expect(failed.modelLimitReason).toContain(
+        "Write big content with file tools",
+      );
+      const terminal = emitted
+        .filter((event) => event.type === "message_end")
+        .at(-1);
+      expect(terminal).toMatchObject({
+        retry: { type: "retry_finished", success: false, attempt: 1 },
+      });
+    } else {
+      expect(failed.message.errorMessage).toMatch(
+        /failed 4 times on this conversation/u,
+      );
+    }
     const diagnostic = failed.message.errorMessage ?? "";
     const kind = {
       never: "first event timed out",
@@ -106,7 +119,7 @@ it.each<Mode>(["never", "silent", "trickle", "output"])(
     if (mode === "output") expect(bytes).toBe(5 * 1024 * 1024 + 7);
     expect(
       emitted.filter((event) => event.type === "message_end"),
-    ).toHaveLength(4);
+    ).toHaveLength(expectedCalls);
     const next = await Effect.runPromise(
       run({
         ...settings,
@@ -120,3 +133,73 @@ it.each<Mode>(["never", "silent", "trickle", "output"])(
 );
 
 const partialContent = [{ type: "text" as const, text: "partial" }];
+
+it.each([
+  { name: "resume seeds", resumeAttempt: 3, transientFailures: 0 },
+  { name: "non-timeout failures", resumeAttempt: 0, transientFailures: 1 },
+])(
+  "does not count $name toward the repeated whole-attempt timeout limit",
+  async ({ resumeAttempt, transientFailures }) => {
+    const { settings } = fauxRun([
+      fauxAssistantMessage("", {
+        stopReason: "error",
+        errorMessage: "Temporary provider failure",
+      }),
+    ]);
+    let calls = 0;
+    const stream: MuleStreamFunction = (model, context, options) => {
+      calls++;
+      if (calls <= transientFailures)
+        return settings.stream(model, context, options);
+      const events = createAssistantMessageEventStream();
+      const partial = fauxAssistantMessage("partial");
+      events.push({ type: "start", partial });
+      const interval = setInterval(() => {
+        events.push({
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "x",
+          partial,
+        });
+      }, 3);
+      options?.signal?.addEventListener(
+        "abort",
+        () => {
+          clearInterval(interval);
+          events.end(partial);
+        },
+        { once: true },
+      );
+      return events;
+    };
+    const outcome = await Effect.runPromise(
+      run({
+        ...settings,
+        stream,
+        retryable: () => true,
+        retry: {
+          enabled: true,
+          maxRetries: 10,
+          baseDelayMs: 1,
+          maxAgentDelayMs: 1,
+        },
+        modelStreamLimits: { attemptMs: 30 },
+        resume:
+          resumeAttempt === 0
+            ? undefined
+            : {
+                kind: "retry",
+                phase: "waiting",
+                attempt: resumeAttempt,
+                maxAttempts: 10,
+                dueAt: Date.now(),
+              },
+      }),
+    );
+    expect(calls).toBe(transientFailures + 2);
+    expect(outcome.status).toBe("failed");
+    expect(outcome.modelLimitReason).toContain(
+      "Write big content with file tools",
+    );
+  },
+);

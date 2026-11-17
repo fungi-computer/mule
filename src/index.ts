@@ -1,11 +1,11 @@
 export { decodeProviderData } from "./provider-data.js";
 export { streamPi as streamModel } from "./provider.js";
-export { normalizeModel } from "./provider-model.js";
+export { normalizeModel, providerDisplayNames } from "./provider-model.js";
+export type { ModelFailure, ProviderRejection } from "./model-failure.js";
 import type { Message, Tool, ToolCall } from "./types.js";
 export {
   isRetryableProviderRejection,
   observeProviderStatus,
-  type ProviderRejection,
   type ProviderStatusRecorder,
 } from "./provider-status.js";
 import * as Cause from "effect/Cause";

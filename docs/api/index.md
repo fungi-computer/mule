@@ -956,6 +956,7 @@ the run, or with the abort reason (an `AbortError` when the reason is not an
 type ProviderRejection =
   | Readonly<{
       code: "usage-limit-reached";
+      cause?: "quota";
       resetAt?: number;
       limit?: "five_hour" | "seven_day" | "seven_day_opus" | "seven_day_sonnet";
     }>
@@ -976,7 +977,24 @@ type ProviderRejection =
     }>;
 ```
 
-Bounded provider evidence, never response bodies, headers or error prose.
+Bounded provider evidence, independent of SDKs, Effect and provider prose.
+
+---
+
+### ModelFailure
+
+```ts
+type ModelFailure = Readonly<{
+  provider: string;
+  cause:
+    | ProviderRejection
+    | Readonly<{
+        code: "setup_required" | "tools_unsupported" | "request_failed";
+      }>;
+}>;
+```
+
+A provider identity and typed cause, independent of diagnostic/provider prose.
 
 ---
 
@@ -1003,6 +1021,17 @@ const mule: Mule;
 ```
 
 Default Promise-facing Mule interface.
+
+---
+
+### providerDisplayNames
+
+```ts
+const providerDisplayNames: ReadonlyMap<ProviderId, string>;
+```
+
+Display names for recognized provider ids; caller-defined ids display as
+written.
 
 ---
 

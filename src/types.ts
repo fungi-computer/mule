@@ -1,8 +1,9 @@
-// Mule's provider-neutral public data contract, matching pi-ai 1.3.0.
+// Mule's provider-neutral public data contract, matching pi-ai 1.5.2.
 // Copyright (c) 2025 Mario Zechner, MIT; see THIRD_PARTY_NOTICES.
 // Provider implementations and their SDK declarations stay private. The two
 // schema leaves below contain only TypeBox data, with no provider imports.
 import type { TSchema } from "typebox";
+import type { ModelFailure } from "./model-failure.js";
 import type {
   AnthropicMessagesCompat,
   BedrockCompat,
@@ -231,6 +232,8 @@ export type AssistantMessage = {
   errorMessage?: string;
   /** Provider prose for the failed conversation turn, never a diagnostic. */
   providerError?: string;
+  /** Typed failure facts retained independently of display text and provider prose. */
+  modelFailure?: ModelFailure;
   rawStopReason?: string;
   endTurn?: boolean;
   timestamp: number;

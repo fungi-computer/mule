@@ -4,7 +4,7 @@ import { fauxModel } from "../../dist/testing.js";
 // the restriction workerd applies to every Mule host.
 import process from "node:process";
 
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import {
   fauxAssistantMessage,
   fauxToolCall,

@@ -1,5 +1,5 @@
 Mule's direct runtime dependencies are Effect 4.0.2, Cairn, and
-@earendil-works/pi-ai 1.3.0. Consult each dependency's distribution for its
+@earendil-works/pi-ai 1.5.2. Consult each dependency's distribution for its
 license terms.
 
 The original Pi loop source was pinned from commit

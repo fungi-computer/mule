@@ -1,5 +1,13 @@
 import * as Schema from "effect/Schema";
-import type { Api, Model } from "./types.js";
+import type { Api, Model, ProviderId } from "./types.js";
+
+/** Display names for recognized provider ids; caller-defined ids display as written. */
+export const providerDisplayNames: ReadonlyMap<ProviderId, string> = new Map([
+  ["openai", "OpenAI"],
+  ["openai-codex", "OpenAI"],
+  ["anthropic", "Anthropic"],
+  ["cloudflare-workers-ai", "Cloudflare Workers AI"],
+]);
 
 const sampling = Schema.Record(Schema.String, Schema.Json);
 const decodeSampling = Schema.decodeUnknownSync(

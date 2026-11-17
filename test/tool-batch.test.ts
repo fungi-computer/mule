@@ -1,4 +1,5 @@
-import { Type, type ToolCall } from "@earendil-works/pi-ai";
+import { type ToolCall } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import {
   fauxAssistantMessage,
   fauxToolCall,

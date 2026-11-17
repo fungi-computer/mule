@@ -1,4 +1,5 @@
-import { Type, type Context } from "@earendil-works/pi-ai";
+import { type Context } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import {
   fauxAssistantMessage,
   fauxToolCall,
