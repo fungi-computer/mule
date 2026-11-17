@@ -1,5 +1,13 @@
 # @fungi.computer/mule
 
+## 0.2.5
+
+### Patch Changes
+
+- Changes since 0.2.4:
+
+  - fix(shiitake): store Pi 1.5.2 replies that mark estimated cost
+
 ## 0.2.4
 
 ### Patch Changes

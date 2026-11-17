@@ -164,6 +164,8 @@ export type Usage = {
     cacheRead: number;
     cacheWrite: number;
     total: number;
+    /** True when `total` is the provider-billed cost; false or absent means a catalog estimate. */
+    totalFromProvider?: boolean;
   };
 };
 /** Provider outcome for an assistant response. */

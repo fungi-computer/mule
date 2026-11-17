@@ -786,6 +786,15 @@ cacheWrite: number;
 total: number;
 ```
 
+###### totalFromProvider?
+
+```ts
+optional totalFromProvider?: boolean;
+```
+
+True when `total` is the provider-billed cost; false or absent means a catalog
+estimate.
+
 ---
 
 ### StopReason
