@@ -1,32 +1,23 @@
 # Mule (`@fungi.computer/mule`)
 
-Mule runs Pi's model and tool loop inside Effect. Use it when your host already
-owns the model, messages and tools and needs an awaited, cancellable run. Pi's
-models, messages, provider replay fields and stream events keep their original
-types.
+Mule runs an AI model together with its tools, looping until the work is done,
+and hands back the final result. You can cancel a run.
 
-## Set up
+```mermaid
+flowchart LR
+  Host[Your host: model, messages, tools] --> Mule
+  Mule -->|stream events| Host
+  Mule -->|tool calls| Tools[Your tools]
+  Mule -->|completed, failed or cancelled| Host
+```
+
+## Quick start
+
+Install it:
 
 ```sh
 npm install @fungi.computer/mule
 ```
-
-The package ships ESM only and depends on `effect` and Pi
-(`@earendil-works/pi-ai`) at runtime, plus TypeBox and `@fungi.computer/cairn`
-for IDs. Mule does not require or install the MCP SDK. Consumers that type-check
-dependency declarations (`skipLibCheck: false`) must install Pi’s Google GenAI
-optional declaration dependency themselves:
-
-```sh
-npm install --save-dev @modelcontextprotocol/sdk
-```
-
-The root entrypoint exports the Promise facade, `mule.run`.
-`@fungi.computer/mule/effect` exports the canonical `muleEffect.run`. The
-Promise facade adapts tools, hooks and listeners into that same Effect program,
-so public Promise declarations do not require Effect types.
-
-## Quick start without a provider account
 
 This deterministic example uses the public testing helper. It makes no network
 request and needs no credential.
@@ -58,6 +49,54 @@ lifecycles. This fake provider checks orchestration rather than a real supplier.
 For a real model, supply Pi's `Model<Api>` and either its normal `streamSimple`
 or an explicit provider stream. The host supplies credentials and billing. Await
 the listener: its completion is part of the run's lifecycle.
+
+## Common tasks
+
+### Run a model loop with no account
+
+The Quick start uses a faux model, with no network and no credential.
+
+### Give the model tools and control
+
+See [Tools and control](#tools-and-control).
+
+### Cancel or retry a run
+
+See [Cancellation, retries and errors](#cancellation-retries-and-errors).
+
+### Use the Effect API
+
+See API and examples.
+
+## Reference
+
+### Overview
+
+Mule runs Pi's model and tool loop inside Effect. Use it when your host already
+owns the model, messages and tools and needs an awaited, cancellable run. Pi's
+models, messages, provider replay fields and stream events keep their original
+types.
+
+## Set up
+
+```sh
+npm install @fungi.computer/mule
+```
+
+The package ships ESM only and depends on `effect` and Pi
+(`@earendil-works/pi-ai`) at runtime, plus TypeBox and `@fungi.computer/cairn`
+for IDs. Mule does not require or install the MCP SDK. Consumers that type-check
+dependency declarations (`skipLibCheck: false`) must install Pi’s Google GenAI
+optional declaration dependency themselves:
+
+```sh
+npm install --save-dev @modelcontextprotocol/sdk
+```
+
+The root entrypoint exports the Promise facade, `mule.run`.
+`@fungi.computer/mule/effect` exports the canonical `muleEffect.run`. The
+Promise facade adapts tools, hooks and listeners into that same Effect program,
+so public Promise declarations do not require Effect types.
 
 ## Tools and control
 

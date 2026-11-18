@@ -1,5 +1,13 @@
 # @fungi.computer/mule
 
+## 0.2.7
+
+### Patch Changes
+
+- Changes since 0.2.6:
+
+  - fix(shiitake): persist interrupted results for dangling tool calls
+
 ## 0.2.6
 
 ### Patch Changes

@@ -8,7 +8,7 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import type { Api, Message, Model, ProviderData } from "../src/types.js";
 import { fauxRun, userMessage } from "./support.js";
 
-it("repairs resumed history before a host-supplied provider adapter sees it", async () => {
+it("drops orphan results before a host-supplied adapter and invents none", async () => {
   const { settings } = fauxRun([fauxAssistantMessage("resumed")]);
   const stream = vi.fn(settings.stream);
   const messages: Message[] = [
@@ -36,16 +36,7 @@ it("repairs resumed history before a host-supplied provider adapter sees it", as
     stream.mock.calls[0]?.[1].messages.filter(
       (message) => message.role === "toolResult",
     ),
-  ).toEqual([
-    {
-      role: "toolResult",
-      toolCallId: "pending",
-      toolName: "read",
-      content: [{ type: "text", text: "Tool execution interrupted." }],
-      isError: true,
-      timestamp: 1,
-    },
-  ]);
+  ).toEqual([]);
   expect(messages).toEqual(before);
 });
 
@@ -164,7 +155,7 @@ it.each(["openai-responses", "anthropic-messages"] as const)(
       expect(input).toContainEqual({
         type: "function_call_output",
         call_id: "pending",
-        output: "Tool execution interrupted.",
+        output: "No result provided",
       });
     } else {
       const requestMessages = Schema.decodeUnknownSync(
@@ -190,7 +181,7 @@ it.each(["openai-responses", "anthropic-messages"] as const)(
         blocks.find((block) => block.tool_use_id === "pending"),
       ).toMatchObject({
         type: "tool_result",
-        content: "Tool execution interrupted.",
+        content: "No result provided",
         is_error: true,
       });
     }
