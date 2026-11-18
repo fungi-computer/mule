@@ -143,6 +143,18 @@ export type MuleRunInput = MuleRunSettings & {
   readonly prepareSystemPrompt?:
     (() => Effect.Effect<string, MuleError>) | undefined;
   readonly tools?: readonly MuleTool[] | undefined;
+  /**
+   * Host redaction of one tool result before any listener, transcript or the
+   * model sees it: `"update"` for live progress, `"result"` for the terminal
+   * result. A failure withholds that output; a terminal failure then ends the
+   * run with a `redaction` error once its batch is recorded.
+   */
+  readonly redactToolResult?:
+    | ((
+        result: MuleToolResult,
+        phase: "update" | "result",
+      ) => Effect.Effect<MuleToolResult, MuleError>)
+    | undefined;
   /** Resolve a fresh provider credential immediately before each Pi call. */
   readonly resolveApiKey?:
     | ((provider: string) => Effect.Effect<string | undefined, MuleError>)
@@ -212,7 +224,35 @@ type FinalizedTool = {
   readonly call: ToolCall;
   readonly identity: MuleIdentity;
   readonly result: MuleToolResult;
+  /** The host could not redact this result, so its output was withheld. */
+  readonly withheld?: MuleError | undefined;
 };
+
+const withheldOutput = "[output withheld: redaction unavailable]";
+
+/** Pass one terminal result through the host's redaction before anyone sees it. */
+function finalizeTool(
+  redact: MuleRunInput["redactToolResult"],
+  call: ToolCall,
+  toolCall: MuleIdentity,
+  result: MuleToolResult,
+): Effect.Effect<FinalizedTool> {
+  if (redact === undefined)
+    return Effect.succeed({ call, identity: toolCall, result });
+  return Effect.match(redact(result, "result"), {
+    onSuccess: (redacted) => ({ call, identity: toolCall, result: redacted }),
+    onFailure: (cause) => ({
+      call,
+      identity: toolCall,
+      result: errorResult(withheldOutput, true),
+      withheld: failure(
+        "redaction",
+        "Tool output was withheld: redaction is unavailable",
+        cause,
+      ),
+    }),
+  });
+}
 
 type PreparedTool = {
   readonly kind: "prepared";
@@ -250,6 +290,7 @@ function emitToolEnd(
 function prepareTool(
   tool: MuleTool | undefined,
   call: ToolCall,
+  input: MuleRunInput,
   run: MuleIdentity,
   turn: MuleIdentity,
   emit: MuleListener,
@@ -266,19 +307,24 @@ function prepareTool(
     });
 
     if (tool === undefined) {
-      const result = errorResult(`Tool "${call.name}" not found`);
-      const finalized = { call, identity: toolCall, result };
+      const finalized = yield* finalizeTool(
+        input.redactToolResult,
+        call,
+        toolCall,
+        errorResult(`Tool "${call.name}" not found`),
+      );
       yield* emitToolEnd(finalized, run, turn, emit);
       return { kind: "finalized", value: finalized };
     }
 
     const preparation = yield* Effect.result(tool.prepare(call));
     if (Result.isFailure(preparation)) {
-      const result = errorResult(
-        preparation.failure.message,
-        preparation.failure.terminate,
+      const finalized = yield* finalizeTool(
+        input.redactToolResult,
+        call,
+        toolCall,
+        errorResult(preparation.failure.message, preparation.failure.terminate),
       );
-      const finalized = { call, identity: toolCall, result };
       yield* emitToolEnd(finalized, run, turn, emit);
       return { kind: "finalized", value: finalized };
     }
@@ -294,10 +340,12 @@ function prepareTool(
 
 function executePreparedTool(
   prepared: PreparedTool,
+  input: MuleRunInput,
   run: MuleIdentity,
   turn: MuleIdentity,
   emit: MuleListener,
 ): Effect.Effect<FinalizedTool, MuleError> {
+  const redact = input.redactToolResult;
   return Effect.gen(function* () {
     let terminal: MuleToolResult | undefined;
     let toolFailure: MuleError | undefined;
@@ -313,25 +361,38 @@ function executePreparedTool(
         terminal = part.success.result;
         return Effect.void;
       }
-      return emit({
-        type: "tool_execution_update",
-        run,
-        turn,
-        toolCall: prepared.identity,
-        call: prepared.call,
-        result: part.success.result,
-      });
+      const update = (result: MuleToolResult) =>
+        emit({
+          type: "tool_execution_update",
+          run,
+          turn,
+          toolCall: prepared.identity,
+          call: prepared.call,
+          result,
+        });
+      // An update the host cannot redact is dropped; the terminal result
+      // decides whether the run may continue.
+      return redact === undefined
+        ? update(part.success.result)
+        : Effect.result(redact(part.success.result, "update")).pipe(
+            Effect.flatMap((redacted) =>
+              Result.isSuccess(redacted)
+                ? update(redacted.success)
+                : Effect.void,
+            ),
+          );
     });
     const result =
       toolFailure !== undefined
         ? errorResult(toolFailure.message)
         : (terminal ??
           errorResult(`Tool "${prepared.call.name}" returned no result`));
-    const finalized = {
-      call: prepared.call,
-      identity: prepared.identity,
+    const finalized = yield* finalizeTool(
+      redact,
+      prepared.call,
+      prepared.identity,
       result,
-    };
+    );
     yield* emitToolEnd(finalized, run, turn, emit);
     return finalized;
   });
@@ -388,17 +449,31 @@ function executeToolBatch(
     const executeEntry = (entry: PreparedToolEntry) =>
       entry.kind === "finalized"
         ? Effect.succeed(entry.value)
-        : executePreparedTool(entry, run, turn, emit);
+        : executePreparedTool(entry, input, run, turn, emit);
     const finalized = sequential
       ? yield* Effect.forEach(calls, (call) =>
           Effect.flatMap(
-            prepareTool(selectedTool(tools, call), call, run, turn, emit),
+            prepareTool(
+              selectedTool(tools, call),
+              call,
+              input,
+              run,
+              turn,
+              emit,
+            ),
             executeEntry,
           ),
         )
       : yield* Effect.gen(function* () {
           const entries = yield* Effect.forEach(calls, (call) =>
-            prepareTool(selectedTool(tools, call), call, run, turn, emit),
+            prepareTool(
+              selectedTool(tools, call),
+              call,
+              input,
+              run,
+              turn,
+              emit,
+            ),
           );
           return yield* Effect.all(entries.map(executeEntry), {
             concurrency: "unbounded",
@@ -407,6 +482,9 @@ function executeToolBatch(
     const messages = yield* Effect.forEach(finalized, (result) =>
       emitToolResult(result, run, turn, emit),
     );
+    // The batch's withheld results are recorded; the model never receives them.
+    const withheld = finalized.find((result) => result.withheld)?.withheld;
+    if (withheld !== undefined) return yield* Effect.fail(withheld);
     return {
       messages,
       terminate:
@@ -1194,6 +1272,7 @@ function resumeTurn(
           const prepared = yield* prepareTool(
             tool,
             checkpoint.call,
+            input,
             run,
             turn,
             emit,
@@ -1201,7 +1280,7 @@ function resumeTurn(
           finalized =
             prepared.kind === "finalized"
               ? prepared.value
-              : yield* executePreparedTool(prepared, run, turn, emit);
+              : yield* executePreparedTool(prepared, input, run, turn, emit);
         } else {
           finalized = {
             call: checkpoint.call,
@@ -1226,8 +1305,12 @@ function resumeTurn(
           });
           yield* emitToolEnd(finalized, run, turn, emit);
         }
+        const message = yield* emitToolResult(finalized, run, turn, emit);
+        // A replayed result the host could not redact is recorded withheld.
+        if (finalized.withheld !== undefined)
+          return yield* Effect.fail(finalized.withheld);
         return {
-          message: yield* emitToolResult(finalized, run, turn, emit),
+          message,
           terminate: finalized.result.terminate === true,
           recorded: false,
         };

@@ -37,10 +37,13 @@ export type MuleIdentity = {
   readonly parent?: MuleIdentity | undefined;
 };
 
-/** Expected failure from Mule's model, tool, control, or listener work. */
+/**
+ * Expected failure from Mule's model, tool, control or listener work, or a
+ * host's tool-result redaction that could not run (`redaction`).
+ */
 export type MuleError = {
   readonly _tag: "MuleError";
-  readonly phase: "model" | "tool" | "control" | "listener";
+  readonly phase: "model" | "tool" | "control" | "listener" | "redaction";
   readonly message: string;
   /** The underlying rejection or thrown value, when one exists. */
   readonly cause?: unknown;

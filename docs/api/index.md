@@ -84,7 +84,8 @@ readonly optional parent?: MuleIdentity;
 type MuleError = object;
 ```
 
-Expected failure from Mule's model, tool, control, or listener work.
+Expected failure from Mule's model, tool, control or listener work, or a host's
+tool-result redaction that could not run (`redaction`).
 
 #### Properties
 
@@ -97,7 +98,7 @@ readonly _tag: "MuleError";
 ##### phase
 
 ```ts
-readonly phase: "model" | "tool" | "control" | "listener";
+readonly phase: "model" | "tool" | "control" | "listener" | "redaction";
 ```
 
 ##### message

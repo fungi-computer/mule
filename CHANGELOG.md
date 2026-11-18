@@ -1,5 +1,13 @@
 # @fungi.computer/mule
 
+## 0.3.0
+
+### Minor Changes
+
+- Changes since 0.2.7:
+
+  - feat(shiitake): scrub Vault values at every Session choke point
+
 ## 0.2.7
 
 ### Patch Changes
