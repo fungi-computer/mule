@@ -543,7 +543,8 @@ function streamTurn(
             "Model stream limits must be positive safe integers",
           ),
         );
-      const startedAt = Date.now();
+      // Durations, not dates: a wall-clock step must not read as a stalled stream.
+      const startedAt = performance.now();
       let lastEventAt = startedAt;
       let maxGapMs = 0;
       let outputBytes = 0;
@@ -552,19 +553,19 @@ function streamTurn(
       const limitError = (kind: string) =>
         failure(
           "model",
-          `Model ${kind} after ${String(Date.now() - startedAt)} ms (max provider gap ${String(Math.max(maxGapMs, Date.now() - lastEventAt))} ms, streamed ${String(outputBytes)} bytes)${kind === "attempt timed out" ? ". Write big content with file tools instead of one giant response." : ""}`,
+          `Model ${kind} after ${String(Math.round(performance.now() - startedAt))} ms (max provider gap ${String(Math.round(Math.max(maxGapMs, performance.now() - lastEventAt)))} ms, streamed ${String(outputBytes)} bytes)${kind === "attempt timed out" ? ". Write big content with file tools instead of one giant response." : ""}`,
           kind === "attempt timed out"
             ? modelAttemptLimitCause
             : modelLimitCause,
         );
       const deadline = <A>(effect: Effect.Effect<A, MuleError>) => {
-        const elapsed = Date.now() - startedAt;
+        const elapsed = performance.now() - startedAt;
         const wholeRemaining = attemptMs - elapsed;
         const gapLimit = Math.min(
           hasEvent ? modelStreamLimits.idleMs : firstEventMs,
           input.modelStreamIdleTimeoutMs ?? modelStreamLimits.idleMs,
         );
-        const gapRemaining = gapLimit - (Date.now() - lastEventAt);
+        const gapRemaining = gapLimit - (performance.now() - lastEventAt);
         const kind =
           wholeRemaining <= gapRemaining
             ? "attempt timed out"
@@ -663,7 +664,7 @@ function streamTurn(
       const observeEvent = (
         event: AssistantMessageEvent,
       ): Effect.Effect<void, MuleError> => {
-        const now = Date.now();
+        const now = performance.now();
         maxGapMs = Math.max(maxGapMs, now - lastEventAt);
         lastEventAt = now;
         hasEvent = true;

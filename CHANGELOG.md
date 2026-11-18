@@ -1,5 +1,13 @@
 # @fungi.computer/mule
 
+## 0.2.6
+
+### Patch Changes
+
+- Changes since 0.2.5:
+
+  - fix(mule): measure model-attempt limits on a monotonic clock
+
 ## 0.2.5
 
 ### Patch Changes

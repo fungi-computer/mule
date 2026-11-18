@@ -1,7 +1,7 @@
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import * as Effect from "effect/Effect";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { MuleEvent, MuleStreamFunction } from "../src/contract.js";
 import { run } from "../src/effect.js";
 import { fauxRun, userMessage } from "./support.js";
@@ -203,3 +203,47 @@ it.each([
     );
   },
 );
+
+it("does not time out a model attempt when the wall clock jumps mid-attempt", async () => {
+  // The limits measure how long the attempt has run, not what the wall clock
+  // says: a clock step (NTP, a suspended host, a test's fake time) must not
+  // read as an hour of silence.
+  const { settings } = fauxRun([]);
+  const final = fauxAssistantMessage("steady");
+  const stream: MuleStreamFunction = () => {
+    const events = createAssistantMessageEventStream();
+    events.push({ type: "start", partial: final });
+    setTimeout(() => {
+      const real = Date.now();
+      vi.spyOn(Date, "now").mockReturnValue(real + 3_600_000);
+      events.push({
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "y",
+        partial: final,
+      });
+      setTimeout(() => {
+        events.push({ type: "done", reason: "stop", message: final });
+      }, 20);
+    }, 20);
+    return events;
+  };
+  try {
+    const outcome = await Effect.runPromise(
+      run({
+        ...settings,
+        stream,
+        modelStreamLimits: {
+          firstEventMs: 5_000,
+          attemptMs: 10_000,
+          outputBytes: 1024,
+        },
+        modelStreamIdleTimeoutMs: 5_000,
+      }),
+    );
+    expect(outcome.status).toBe("completed");
+    expect(outcome.message.content).toEqual([{ type: "text", text: "steady" }]);
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
