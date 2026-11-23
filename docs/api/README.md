@@ -8,8 +8,9 @@
 
 ## Modules
 
-| Module                | Description |
-| --------------------- | ----------- |
-| [effect](effect.md)   | -           |
-| [index](index.md)     | -           |
-| [testing](testing.md) | -           |
+| Module                              | Description |
+| ----------------------------------- | ----------- |
+| [assistant-text](assistant-text.md) | -           |
+| [effect](effect.md)                 | -           |
+| [index](index.md)                   | -           |
+| [testing](testing.md)               | -           |

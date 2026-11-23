@@ -10,6 +10,7 @@ const TextSignature = Schema.fromJsonString(
 );
 const decodeTextSignature = Schema.decodeUnknownOption(TextSignature);
 
+/** One assistant content block; only text blocks carry reader-visible text. */
 export type AssistantPart = Readonly<{
   type: string;
   text?: string | undefined;
