@@ -155,6 +155,14 @@ export type MuleRunInput = MuleRunSettings & {
         phase: "update" | "result",
       ) => Effect.Effect<MuleToolResult, MuleError>)
     | undefined;
+  /**
+   * After a restart, say what became of a tool call that had started and is not
+   * safe to replay. Return plain words for the error result, or `undefined` to
+   * keep Mule's default. Called only for that case; a failure keeps the default.
+   */
+  readonly recoverInterruptedTool?:
+    | ((call: ToolCall) => Effect.Effect<string | undefined, MuleError>)
+    | undefined;
   /** Resolve a fresh provider credential immediately before each Pi call. */
   readonly resolveApiKey?:
     | ((provider: string) => Effect.Effect<string | undefined, MuleError>)
@@ -1282,6 +1290,15 @@ function resumeTurn(
               ? prepared.value
               : yield* executePreparedTool(prepared, input, run, turn, emit);
         } else {
+          const interrupted =
+            checkpoint.state === "started" &&
+            input.recoverInterruptedTool !== undefined
+              ? yield* input
+                  .recoverInterruptedTool(checkpoint.call)
+                  .pipe(
+                    Effect.orElseSucceed((): string | undefined => undefined),
+                  )
+              : undefined;
           finalized = {
             call: checkpoint.call,
             identity: identity("tool_call", turn),
@@ -1292,7 +1309,8 @@ function resumeTurn(
                     resume.message.stopReason === "length"
                   ? truncatedToolResult(checkpoint.call)
                   : errorResult(
-                      "Interrupted by a restart; it may or may not have completed; check before retrying.",
+                      interrupted ??
+                        "Interrupted by a restart; it may or may not have completed; check before retrying.",
                     ),
           };
           yield* emit({

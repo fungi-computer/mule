@@ -1,5 +1,15 @@
 # @fungi.computer/mule
 
+## 0.4.0
+
+### Minor Changes
+
+- Changes since 0.3.1:
+
+  - fix(mule): keep the interrupted text when host recovery fails
+  - feat(mule): let the host say what became of a tool call a restart
+    interrupted
+
 ## 0.3.1
 
 ### Patch Changes

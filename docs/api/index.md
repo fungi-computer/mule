@@ -907,13 +907,14 @@ Inputs for one complete Pi model/tool loop through the Promise facade.
 
 #### Type Declaration
 
-| Name                     | Type                                                                 | Description                                                          |
-| ------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `tools?`                 | readonly [`MuleTool`](#muletool)[]                                   | -                                                                    |
-| `resolveApiKey()?`       | (`provider`, `signal`) => `Promise`\<`string` \| `undefined`\>       | Resolve a fresh provider credential immediately before each Pi call. |
-| `getSteeringMessages()?` | (`signal`) => `Promise`\<readonly [`Message`](effect.md#message)[]\> | Pull messages that should steer the active run at Pi's safe point.   |
-| `getFollowUpMessages()?` | (`signal`) => `Promise`\<readonly [`Message`](effect.md#message)[]\> | Pull messages queued until the run would otherwise finish.           |
-| `shouldStopAfterTurn()?` | (`turn`, `signal`) => `Promise`\<`boolean`\>                         | Request a graceful stop after the current Pi turn has fully settled. |
+| Name                        | Type                                                                 | Description                                                                                                                                                                                                |
+| --------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools?`                    | readonly [`MuleTool`](#muletool)[]                                   | -                                                                                                                                                                                                          |
+| `recoverInterruptedTool()?` | (`call`, `signal`) => `Promise`\<`string` \| `undefined`\>           | After a restart, say what became of a tool call that had started and is not safe to replay. Return plain words for the error result, or `undefined` to keep Mule's default. A rejection keeps the default. |
+| `resolveApiKey()?`          | (`provider`, `signal`) => `Promise`\<`string` \| `undefined`\>       | Resolve a fresh provider credential immediately before each Pi call.                                                                                                                                       |
+| `getSteeringMessages()?`    | (`signal`) => `Promise`\<readonly [`Message`](effect.md#message)[]\> | Pull messages that should steer the active run at Pi's safe point.                                                                                                                                         |
+| `getFollowUpMessages()?`    | (`signal`) => `Promise`\<readonly [`Message`](effect.md#message)[]\> | Pull messages queued until the run would otherwise finish.                                                                                                                                                 |
+| `shouldStopAfterTurn()?`    | (`turn`, `signal`) => `Promise`\<`boolean`\>                         | Request a graceful stop after the current Pi turn has fully settled.                                                                                                                                       |
 
 ---
 

@@ -78,6 +78,14 @@ export type MuleTool = {
 /** Inputs for one complete Pi model/tool loop through the Promise facade. */
 export type MuleRunInput = MuleRunSettings & {
   readonly tools?: readonly MuleTool[] | undefined;
+  /**
+   * After a restart, say what became of a tool call that had started and is not
+   * safe to replay. Return plain words for the error result, or `undefined` to
+   * keep Mule's default. A rejection keeps the default.
+   */
+  readonly recoverInterruptedTool?:
+    | ((call: ToolCall, signal: AbortSignal) => Promise<string | undefined>)
+    | undefined;
   /** Resolve a fresh provider credential immediately before each Pi call. */
   readonly resolveApiKey?:
     | ((provider: string, signal: AbortSignal) => Promise<string | undefined>)
@@ -179,6 +187,7 @@ function liftTool(tool: MuleTool): MuleEffectTool {
 function liftInput(input: MuleRunInput): MuleEffectRunInput {
   const {
     tools,
+    recoverInterruptedTool,
     resolveApiKey,
     getSteeringMessages,
     getFollowUpMessages,
@@ -188,6 +197,12 @@ function liftInput(input: MuleRunInput): MuleEffectRunInput {
   return {
     ...settings,
     tools: tools?.map(liftTool),
+    recoverInterruptedTool:
+      recoverInterruptedTool &&
+      ((call) =>
+        fromPromise("control", "Mule could not recover a tool call", (signal) =>
+          recoverInterruptedTool(call, signal),
+        )),
     resolveApiKey:
       resolveApiKey &&
       ((provider) =>
