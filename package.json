@@ -15,6 +15,10 @@
       "types": "./dist/effect.d.ts",
       "import": "./dist/effect.js"
     },
+    "./assistant-text": {
+      "types": "./dist/assistant-text.d.ts",
+      "import": "./dist/assistant-text.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
